@@ -14,7 +14,12 @@ def update_requirements():
             raise ValueError(
                 f"Error: server dependencies not found with err-data: \t {data}!!"
             )
-        data = _check_through_venv_dir(data)
+        raw = _check_through_venv_dir(data)
+        if raw:
+            print(f"Received raw updates with value: \n{raw}")
+            data.extend(raw)
+        else:
+            print("Raw updates not found for requirement")
         for d in data:
             while ">=" not in d:
                 if " " in d:
@@ -24,10 +29,9 @@ def update_requirements():
             if d not in reqs:
                 reqs.append(d)
 
-        with req.open("w") as w:
-            w.writelines("\n".join(reqs) + "\n")
-
-        # w.writelines(reqs)
+        for r in reqs:
+            req.write_text(f"\n{r}")
+            # w.writelines("\n".join(reqs) + "\n")
 
     return print(f"Updated requirements file with len: {len(reqs)}!!")
 
@@ -38,7 +42,9 @@ def _check_through_venv_dir(reqs: list[str]):
         raise ModuleNotFoundError("Error: Root module not found!!")
     venv = root / ".venv"
     if not venv.is_dir():
-        raise ValueError(f"Error: Virtual environment does not exist {venv}")
+        venv = root.parent / ".venv"
+        if not venv.is_dir():
+            raise ValueError(f"Error: Virtual environment does not exist {venv}")
     elif not (venv / "pyvenv.cfg").is_file():
         raise ValueError("Error: Dir is not of python virtual environment!!")
     raw = []
@@ -56,10 +62,17 @@ def _check_through_venv_dir(reqs: list[str]):
                         if not site.is_dir():
                             raise ValueError("Error: python path is not of directory!!")
                         for pkg in site.iterdir():
-                            if pkg.as_uri().find(".dist") != -1:
+                            if pkg.name.find(".") != -1:
+                                print(f"Skipping extra modules with name: {pkg.name}")
                                 continue
                             elif not pkg.name.startswith("__"):
-                                print(f"Package name: {pkg.name}")
+                                if len(raw) > 0:
+                                    if (
+                                        pkg.name in raw[-1]
+                                        or raw[-1].split(">")[0] in pkg.name
+                                    ):
+                                        print("Found module skipping package...")
+                                        continue
                                 try:
                                     dependecies = requires(pkg.name)
                                 except PackageNotFoundError as e:
@@ -78,13 +91,7 @@ def _check_through_venv_dir(reqs: list[str]):
                                     req = req[0] + ">=" + req[1]
                                     if req not in raw:
                                         raw.append(req)
+                        break
+    print(f"Return raws found with len: {len(raw)}")
 
-    print(
-        "Processed requirments with len %i and params requirements with len: %i"
-        % (len(raw), len(req))
-    )
-
-    for r in raw:
-        if r not in req:
-            raw.remove(r)
-    return raw
+    return [r for r in raw if r not in reqs]

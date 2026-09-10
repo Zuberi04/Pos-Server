@@ -6,6 +6,8 @@ from database.models import Base
 from io_services.events import sio
 from r_services.service import r_client
 
+# from setup import update_requirements
+
 # ============App intit================
 app = FastAPI()
 
@@ -15,6 +17,7 @@ app.mount("/", ASGIApp(sio))
 @app.on_event("startup")
 async def server_init():
     print("Server starting...")
+    # update_requirements()
 
     # return initialize_db()
 
