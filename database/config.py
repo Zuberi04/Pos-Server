@@ -14,8 +14,6 @@ from utils.password import pwd
 
 load_dotenv()
 
-paswd = pwd.password()
-
 
 def load_envs():
     env = Path(".env")
@@ -32,7 +30,7 @@ def load_envs():
     if found < 3:
         wrote = env.write_text(f"""\n
             POSTGRES_USER=archie_pos \n
-            POSTGRES_PASSWORD={quote_plus(paswd)} \n
+            POSTGRES_PASSWORD={quote_plus(pwd.password())} \n
             DB_URL=pos.db
             """)
         if not wrote:
@@ -48,7 +46,9 @@ DB_DIR.mkdir(parents=True, exist_ok=True)
 
 db_path = getenv("DB_URL", "pos.db")
 db_user = getenv("POSTGRES_USER", "pos")
-db_pass = getenv("POSTGRES_PASSWORD", paswd)
+db_pass = getenv("POSTGRES_PASSWORD", None)
+if not db_pass:
+    raise ValueError(f"Error: failed to get db password with val: {db_pass}!!")
 
 try:
     engine = create_engine(
