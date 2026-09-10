@@ -6,8 +6,6 @@ from database.models import Base
 from io_services.events import sio
 from r_services.service import r_client
 
-from setup import update_requirements
-
 # ============App intit================
 app = FastAPI()
 
@@ -22,7 +20,7 @@ async def server_init():
 
 
 def initialize_db():
-    update_requirements()
+
     Base.metadata.drop_all(engine)
     r_client.reset()
     Base.metadata.create_all(engine)

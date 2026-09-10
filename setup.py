@@ -1,5 +1,5 @@
 from pathlib import Path
-from importlib.metadata import version
+from importlib.metadata import version, requires, PackageNotFoundError
 
 
 def update_requirements():
@@ -24,30 +24,67 @@ def update_requirements():
             if d not in reqs:
                 reqs.append(d)
 
-    with req.open("w") as w:
-        w.writelines(reqs)
+        with req.open("w") as w:
+            w.writelines("\n".join(reqs) + "\n")
 
-    return None
+        # w.writelines(reqs)
+
+    return print(f"Updated requirements file with len: {len(reqs)}!!")
 
 
 def _check_through_venv_dir(reqs: list[str]):
-    venv = Path(".venv")
+    root = Path(__file__).resolve().parent
+    if not root:
+        raise ModuleNotFoundError("Error: Root module not found!!")
+    venv = root / ".venv"
     if not venv.is_dir():
-        raise ValueError(f"Error: Venv env is not of root dir with path: {venv}")
+        raise ValueError(f"Error: Virtual environment does not exist {venv}")
+    elif not (venv / "pyvenv.cfg").is_file():
+        raise ValueError("Error: Dir is not of python virtual environment!!")
+    raw = []
     for v in venv.iterdir():
         if v.name.find("lib") != -1:
             if not v.is_dir():
-                raise ValueError(f"Error: Venv env is not of root dir with path: {v}")
+                raise ValueError(
+                    f"Error: Venv package is not of root dir with path: {v}"
+                )
             for x in v.iterdir():
-                found = False
-                if x.name.find(".dist") == -1:
-                    if x not in reqs:
-                        for r in reqs:
-                            if r.find(x.name) != -1 or x.name.startswith(r[:4]):
-                                found = True
-                                break
-                        if not found:
-                            req = x.name + ">=" + version(x.name)
-                            if req not in reqs:
-                                reqs.append(req)
-    return reqs
+                if x.name.find("python") != -1:
+                    if not x.is_dir():
+                        raise ValueError("Error: python path is of directory!!")
+                    for site in x.iterdir():
+                        if not site.is_dir():
+                            raise ValueError("Error: python path is not of directory!!")
+                        for pkg in site.iterdir():
+                            if pkg.as_uri().find(".dist") != -1:
+                                continue
+                            elif not pkg.name.startswith("__"):
+                                print(f"Package name: {pkg.name}")
+                                try:
+                                    dependecies = requires(pkg.name)
+                                except PackageNotFoundError as e:
+                                    print(
+                                        f"Module found with no metadata with err-value: \n\t{e}!!"
+                                    )
+                                    continue
+                                if dependecies:
+                                    for d in dependecies:
+                                        if d in reqs:
+                                            reqs.remove(d)
+                                req = pkg.name + "==" + version(pkg.name)
+                                print(f"Checking requirment: {req}")
+                                if req not in reqs:
+                                    req = req.split("==")
+                                    req = req[0] + ">=" + req[1]
+                                    if req not in raw:
+                                        raw.append(req)
+
+    print(
+        "Processed requirments with len %i and params requirements with len: %i"
+        % (len(raw), len(req))
+    )
+
+    for r in raw:
+        if r not in req:
+            raw.remove(r)
+    return raw
