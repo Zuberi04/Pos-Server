@@ -33,7 +33,7 @@ def load_envs():
             POSTGRES_PASSWORD={quote_plus(pwd.password())} \n
             DB_URL=pos.db
             """)
-        return print("Wrote to env with upd file size of: ", env.stat.st_size())
+        return print("Wrote to env with upd file size of: ", env.stat().st_size)
     return print(f"Found keys in env file with count: {found}")
 
 
