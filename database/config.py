@@ -28,14 +28,12 @@ def load_envs():
                     found += 1
 
     if found < 3:
-        wrote = env.write_text(f"""\n
+        env.write_text(f"""\n
             POSTGRES_USER=archie_pos \n
             POSTGRES_PASSWORD={quote_plus(pwd.password())} \n
             DB_URL=pos.db
             """)
-        if not wrote:
-            raise ValueError("Error, failed to write to env!!")
-        return print("Wrote to env with upd file size of: ", env.__sizeof__())
+        return print("Wrote to env with upd file size of: ", env.stat.st_size())
     return print(f"Found keys in env file with count: {found}")
 
 
@@ -49,7 +47,7 @@ DB_DIR.mkdir(parents=True, exist_ok=True)
 
 db_path = getenv("DB_URL", "pos.db")
 db_user = getenv("POSTGRES_USER", "pos")
-db_pass = getenv("POSTGRES_PASSWORD", "")
+db_pass = getenv("POSTGRES_PASSWORD", "BACKUP_PASS")
 
 if not db_pass:
     raise ValueError(
