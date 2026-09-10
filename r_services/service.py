@@ -2,7 +2,7 @@ import redis
 from utils.extras import create_user_cache_key
 
 r_client = redis.Redis(
-    host='localhost',
+    host="localhost",
     port=6379,
     decode_responses=True,
 )
@@ -11,7 +11,6 @@ r_client = redis.Redis(
 class RedisServices:
     def __init__(self):
         self.ex: float = 3600
-        
 
     def cache_data(self, key: str, data: dict, expire: float = None):
         self.ex = 3600
@@ -22,11 +21,12 @@ class RedisServices:
                 data[k] = str(v)
                 continue
             continue
+        cache = r_client.hset(create_user_cache_key(key), mapping=data)
+        return r_client.expire(create_user_cache_key(key), expire) if expire else cache
 
-        return r_client.hset(create_user_cache_key(key), mapping=data)
-    
     @staticmethod
     async def collect_cache(key: str):
         return r_client.hgetall(create_user_cache_key(key))
-    
+
+
 r_service = RedisServices()
