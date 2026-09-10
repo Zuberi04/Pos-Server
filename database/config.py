@@ -47,7 +47,7 @@ DB_DIR.mkdir(parents=True, exist_ok=True)
 
 db_path = getenv("DB_URL", "pos.db")
 db_user = getenv("POSTGRES_USER", "pos")
-db_pass = getenv("POSTGRES_PASSWORD", "BACKUP_PASS")
+db_pass = getenv("POSTGRES_PASSWORD", getenv("BACKUP_PASS", ""))
 
 if not db_pass:
     raise ValueError(
