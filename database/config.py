@@ -39,6 +39,9 @@ def load_envs():
     return print(f"Found keys in env file with count: {found}")
 
 
+load_envs()
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_DIR = BASE_DIR / "pos_data"
 
