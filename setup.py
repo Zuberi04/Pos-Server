@@ -33,7 +33,7 @@ def update_requirements():
 
 
 def _check_through_venv_dir(reqs: list[str]):
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parent
     if not root:
         raise ModuleNotFoundError("Error: Root module not found!!")
     venv = root / ".venv"
