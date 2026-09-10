@@ -35,7 +35,7 @@ def load_envs():
             """)
         if not wrote:
             raise ValueError("Error, failed to write to env!!")
-        return print("Wrote with value: ", wrote)
+        return print("Wrote to env with upd file size of: ", env.__sizeof__())
     return print(f"Found keys in env file with count: {found}")
 
 
@@ -49,9 +49,12 @@ DB_DIR.mkdir(parents=True, exist_ok=True)
 
 db_path = getenv("DB_URL", "pos.db")
 db_user = getenv("POSTGRES_USER", "pos")
-db_pass = getenv("POSTGRES_PASSWORD", None)
+db_pass = getenv("POSTGRES_PASSWORD", "")
+
 if not db_pass:
-    raise ValueError(f"Error: failed to get db password with val: {db_pass}!!")
+    raise ValueError(
+        f"Error: failed to get config db_pass from env file with val: {db_pass}!!"
+    )
 
 try:
     engine = create_engine(
