@@ -1,20 +1,15 @@
 from fastapi import FastAPI
 from socketio import ASGIApp
-from pathlib import Path
-from urllib.parse import quote_plus
 
 from database.config import create_db, engine
 from database.models import Base
 from io_services.events import sio
 from r_services.service import r_client
-from utils.password import pwd
+
+from setup import update_requirements
 
 # ============App intit================
 app = FastAPI()
-
-
-# ==========Env path===================
-env = Path(".env")
 
 app.mount("/", ASGIApp(sio))
 
@@ -22,24 +17,12 @@ app.mount("/", ASGIApp(sio))
 @app.on_event("startup")
 async def server_init():
     print("Server starting...")
-    p = pwd.create_password()
-    if not p:
-        raise ValueError("Error, failed to get p!!")
 
-    print("Is env file: ", env.is_file())
-    wrote = env.write_text(f"""\
-        POSTGRES_USER=pos
-        POSTGRES_PASSWORD={quote_plus(pwd.create_password())}
-        POSTGRES_DB=posdb
-        """)
-    if not wrote:
-        raise ValueError("Error, failed to write to env!!")
-    print("Wrote with value: ", wrote)
-
-    # return reset_db()
+    # return initialize_db()
 
 
-def reset_db():
+def initialize_db():
+    update_requirements()
     Base.metadata.drop_all(engine)
     r_client.reset()
     Base.metadata.create_all(engine)
