@@ -14,7 +14,7 @@ def update_requirements():
             raise ValueError(
                 f"Error: server dependencies not found with err-data: \t {data}!!"
             )
-        data = _check_through_venv_dir(data)
+        data.extend(_check_through_venv_dir(data))
         for d in data:
             while ">=" not in d:
                 if " " in d:
@@ -23,11 +23,8 @@ def update_requirements():
                     d = d.replace("=", ">")
             if d not in reqs:
                 reqs.append(d)
-
         with req.open("w") as w:
             w.writelines("\n".join(reqs) + "\n")
-
-        # w.writelines(reqs)
 
     return print(f"Updated requirements file with len: {len(reqs)}!!")
 
@@ -79,12 +76,4 @@ def _check_through_venv_dir(reqs: list[str]):
                                     if req not in raw:
                                         raw.append(req)
 
-    print(
-        "Processed requirments with len %i and params requirements with len: %i"
-        % (len(raw), len(req))
-    )
-
-    for r in raw:
-        if r not in req:
-            raw.remove(r)
-    return raw
+    return [r for r in raw if r not in reqs]
