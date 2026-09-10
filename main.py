@@ -19,6 +19,26 @@ env = Path(".env")
 app.mount("/", ASGIApp(sio))
 
 
+@app.on_event("startup")
+async def server_init():
+    print("Server starting...")
+    p = pwd.create_password()
+    if not p:
+        raise ValueError("Error, failed to get p!!")
+
+    print("Is env file: ", env.is_file())
+    wrote = env.write_text(f"""\
+        POSTGRES_USER=pos
+        POSTGRES_PASSWORD={quote_plus(pwd.create_password())}
+        POSTGRES_DB=posdb
+        """)
+    if not wrote:
+        raise ValueError("Error, failed to write to env!!")
+    print("Wrote with value: ", wrote)
+
+    # return reset_db()
+
+
 def reset_db():
     Base.metadata.drop_all(engine)
     r_client.reset()
@@ -27,26 +47,3 @@ def reset_db():
         db.close()
         print("Closed db successfully!!")
     return print("Db dropped and performed redis reset!!")
-
-
-@app.on_event("startup")
-async def server_init():
-    print("Server started successfully")
-    p = pwd.create_password()
-    if not p:
-        raise ValueError("Error, failed to get p!!")
-
-    print("Is env file: ", env.is_file())
-    write = [
-        "POSTGRES_USER=pos",
-        f"POSTGRES_PASSWORD={quote_plus(pwd.create_password())}",
-        "POSTGRES_DB=posdb",
-    ]
-    for w in write:
-        wrote = env.write_text(w)
-        if not wrote:
-            raise ValueError("Error, failed to write to env!!")
-        print("Wrote with value: ", wrote)
-        continue
-
-    # return reset_db()
