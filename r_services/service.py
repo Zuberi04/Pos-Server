@@ -22,8 +22,6 @@ class RedisServices:
                 continue
             continue
         cache = r_client.hset(create_user_cache_key(key), mapping=data)
-        if not cache:
-            raise ValueError("Error, failed to cache passed data!!")
         return r_client.expire(create_user_cache_key(key), expire) if expire else cache
 
     @staticmethod
