@@ -28,9 +28,9 @@ def load_envs():
                     found += 1
 
     if found < 3:
-        wrote = env.write_text(f"""\
-            POSTGRES_USER=archie_pos
-            POSTGRES_PASSWORD={quote_plus(pwd.password())}
+        wrote = env.write_text(f"""\n
+            POSTGRES_USER=archie_pos \n
+            POSTGRES_PASSWORD={quote_plus(pwd.password())} \n
             DB_URL=pos.db
             """)
         if not wrote:
