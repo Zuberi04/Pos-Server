@@ -17,7 +17,10 @@ app.mount("/", ASGIApp(sio))
 @app.on_event("startup")
 async def server_init():
     print("Server starting...")
-    update_reqs.update_requirements()
+    try:
+        update_reqs.update_requirements()
+    except Exception as exc:
+        print(f"Failed to update requirements: {exc}")
 
     # return initialize_db()
 
