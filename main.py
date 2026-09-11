@@ -6,7 +6,7 @@ from database.models import Base
 from io_services.events import sio
 from r_services.service import r_client
 
-# from setup import update_requirements
+from setup import update_reqs
 
 # ============App intit================
 app = FastAPI()
@@ -17,7 +17,10 @@ app.mount("/", ASGIApp(sio))
 @app.on_event("startup")
 async def server_init():
     print("Server starting...")
-    # update_requirements()
+    try:
+        update_reqs.update_requirements()
+    except Exception as exc:
+        print(f"Failed to update requirements: {exc}")
 
     # return initialize_db()
 
