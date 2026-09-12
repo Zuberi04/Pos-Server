@@ -1,6 +1,5 @@
 from pathlib import Path
 from importlib.metadata import PackageNotFoundError, metadata
-from ast import literal_eval
 
 
 class UpdateReqs:
