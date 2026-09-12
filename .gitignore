@@ -15,3 +15,6 @@ env/
 #IDE
 .vscode/
 .idea/
+
+#Data logs
+pos_data/
