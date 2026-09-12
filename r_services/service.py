@@ -1,8 +1,14 @@
 import redis
+from dotenv import load_dotenv
+from os import getenv
 from utils.extras import create_user_cache_key
 
+load_dotenv()
+
+# ============Global redis client=====================
 r_client = redis.Redis(
     host="localhost",
+    # password=getenv("REDIS_PASSWORD", ""),
     port=6379,
     decode_responses=True,
 )
