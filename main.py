@@ -7,6 +7,7 @@ from io_services.events import sio
 from r_services.service import r_client
 
 from setup import update_reqs
+
 from utils.gen_pwd import genpwd
 
 # ============App intit================

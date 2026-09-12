@@ -1,3 +1,17 @@
-pos_data
-.venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+#Virtual envs
+.venv/
+venv/
+env/
+
+#Env variables
 .env
+.env.*
+
+#IDE
+.vscode/
+.idea/

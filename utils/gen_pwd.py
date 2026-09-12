@@ -30,37 +30,50 @@ class GenPassword:
             data = r.readlines()
             if not data:
                 raise ValueError("Error, no environ data found!!")
-            data = [d for d in data if data.count(d) <= 1]
             for d in data:
                 if not d.split("=")[0].endswith("PASSWORD"):
                     if not data.index(d):
                         env.write_text(f"{d}")
+                        continue
                     self._load_envs(d)
                 else:
                     prev.append(d)
-
-        for p in prev:
-            if "=" not in p:
-                raise ValueError("Error, malformed env variable passed!!")
-            p = p.split("=")
-            try:
-                l = int((len(p[1]) / max_l) * min_l) + min_l
-            except IndexError:
-                l = min_l
-            if p[0] not in self.chars:
-                self.chars.append(p[0].capitalize())
-            print(f"Gen password for key: {p[0]}")
-            self._create_password(p[0], l)
-
-        return r_service.cache_data(
-            self.pwd_key, {"pos_db": "postgres"}, 3600 * 24 * 14
-        )
+            if not prev:
+                f = "_PASSWORD="
+                prev = ["REDIS", "POSTGRES"]
+                prev = [p + f for p in prev]
+            for p in prev:
+                if "=" not in p:
+                    raise ValueError("Error: malformed env variable passed!!")
+                p = p.split("=")
+                try:
+                    l = int((len(p[1]) / max_l) * min_l) + min_l
+                    if l * 2 >= max_l:
+                        l -= min_l
+                except IndexError:
+                    l = min_l
+                print(f"Gen password for key: {p[0]} with len: {l}")
+                use = ""
+                for c in p[0]:
+                    if p[0].index(c) // 2 != 0:
+                        use = use + c.lower()
+                    else:
+                        use = use + c
+                if use not in self.chars:
+                    self.chars.append(use)
+                self._create_password(p[0], l)
+            return r_service.cache_data(
+                self.pwd_key, {"pos_db": "postgres"}, 3600 * 24 * 14
+            )
 
     def _create_password(self, key: str, l: int):
         pwd = ""
         while len(pwd) < l:
             for item in self.chars:
-                while len(pwd) in range(int(len(item) * 0.8 - 1)):
+                n_range = (
+                    len(pwd) + int(len(item) * 0.8 - 1) if pwd else int(len(item) * 0.8)
+                )
+                while len(pwd) in range(n_range):
                     char = choice(item)
                     if char in pwd and pwd.count(char) < 3 or not char in pwd:
                         pwd = pwd + char
