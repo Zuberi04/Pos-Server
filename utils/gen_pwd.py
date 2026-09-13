@@ -10,7 +10,6 @@ from r_services.service import r_service
 load_dotenv()
 
 env = Path(".env")
-env = Path("Pos-Server.env") if not env.is_file() else env
 
 
 class GenPassword:
@@ -21,9 +20,7 @@ class GenPassword:
 
     async def gen_next_pwd_l(self, min_l=12, max_l=12 * 5 + 4):
         if not env.is_file():
-            return print(
-                "Might be running in production env..Run local to rotate pwd!!"
-            )
+            return print("Env file not found skipping password rotate!!")
         exp = await r_service.collect_cache(self.pwd_key)
         if exp:
             return print("Expiry not met for alter pass!!")
