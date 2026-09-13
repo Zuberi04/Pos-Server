@@ -9,11 +9,8 @@ from r_services.service import r_service
 
 load_dotenv()
 
-
-try:
-    env = Path(".env")
-except Exception:
-    env = Path("Pos-Server.env")
+env = Path(".env")
+env = Path("Pos-Server.env") if not env.is_file() else env
 
 
 class GenPassword:
