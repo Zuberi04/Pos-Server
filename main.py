@@ -19,8 +19,8 @@ app.mount("/", ASGIApp(sio))
 @app.on_event("startup")
 async def server_init():
     print("Server starting...")
-    output = await genpwd.gen_next_pwd_l()
-    print(f"Done with Env pwd generation... with output: {output}")
+
+    await genpwd.gen_next_pwd_l()
     try:
         update_reqs.update_requirements()
     except Exception as exc:

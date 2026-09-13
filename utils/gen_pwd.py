@@ -62,9 +62,8 @@ class GenPassword:
                 if use not in self.chars:
                     self.chars.append(use)
                 self._create_password(p[0], l)
-            return r_service.cache_data(
-                self.pwd_key, {"pos_db": "postgres"}, 3600 * 24 * 14
-            )
+            r_service.cache_data(self.pwd_key, {"pos_db": "postgres"}, 3600 * 24 * 14)
+            return print("Rotated pwd for Redis && Postgres db!!")
 
     def _create_password(self, key: str, l: int):
         pwd = ""
