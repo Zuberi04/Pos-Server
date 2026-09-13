@@ -1,6 +1,5 @@
 from pathlib import Path
 from importlib.metadata import PackageNotFoundError, metadata
-from ast import literal_eval
 
 
 class UpdateReqs:
@@ -90,6 +89,8 @@ class UpdateReqs:
                                     "Error: python path is not of directory!!"
                                 )
                             for pkg in site.iterdir():
+                                if pkg.name.startswith("__"):
+                                    continue
                                 try:
                                     meta = metadata(pkg.name)
                                 except PackageNotFoundError:
