@@ -9,7 +9,11 @@ from r_services.service import r_service
 
 load_dotenv()
 
-env = Path(".env")
+
+try:
+    env = Path(".env")
+except Exception:
+    env = Path("Pos-Server.env")
 
 
 class GenPassword:
@@ -20,7 +24,7 @@ class GenPassword:
 
     async def gen_next_pwd_l(self, min_l=12, max_l=12 * 5 + 4):
         if not env.is_file():
-            raise FileNotFoundError("Error, .env file is missing from root dir!!")
+            raise FileNotFoundError("Error: Env file not found in environ!!")
         exp = await r_service.collect_cache(self.pwd_key)
         if exp:
             return print("Expiry not met for alter pass!!")
