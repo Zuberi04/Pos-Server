@@ -24,7 +24,9 @@ class GenPassword:
 
     async def gen_next_pwd_l(self, min_l=12, max_l=12 * 5 + 4):
         if not env.is_file():
-            raise FileNotFoundError("Error: Env file not found in environ!!")
+            return print(
+                "Might be running in production env..Run local to rotate pwd!!"
+            )
         exp = await r_service.collect_cache(self.pwd_key)
         if exp:
             return print("Expiry not met for alter pass!!")
