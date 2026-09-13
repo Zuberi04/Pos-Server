@@ -20,8 +20,8 @@ app.mount("/", ASGIApp(sio))
 async def server_init():
     print("Server starting...")
 
-    await genpwd.gen_next_pwd_l()
     try:
+        await genpwd.gen_next_pwd_l()
         update_reqs.update_requirements()
     except Exception as exc:
         print(f"Failed to update requirements: {exc}")

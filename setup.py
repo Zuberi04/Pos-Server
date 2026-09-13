@@ -69,7 +69,7 @@ class UpdateReqs:
         if not venv.is_dir():
             venv = root.parent / ".venv"
             if not venv.is_dir():
-                raise ValueError(f"Error: Virtual environment does not exist {venv}")
+                return print("Venv not found skipping requirements update!!")
         elif not (venv / "pyvenv.cfg").is_file():
             raise ValueError("Error: Dir is not of python virtual environment!!")
 
