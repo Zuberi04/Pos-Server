@@ -16,7 +16,7 @@ class FileEntries:
         for file in data["data"]:
             if file:
                 size += file.size / 1024 / 1024
-                proc_file.detect_file_type(file)
+                proc_file.detect_process_type(file)
 
         return f"Success Processing files with size: {size}"
 
