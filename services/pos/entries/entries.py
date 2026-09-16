@@ -1,6 +1,3 @@
-import base64
-import binascii
-
 from services.pos.entries.process import proc_file
 
 
