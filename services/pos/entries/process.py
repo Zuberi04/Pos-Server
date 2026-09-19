@@ -1,3 +1,4 @@
+import pandas as pd
 from pathlib import Path
 from typing import Any
 
@@ -43,14 +44,17 @@ class ProcessFile:
             data["path"] = self.path / f"{data['id'].split('-')[-1]}"
             data["path"].mkdir(exist_ok=True)
 
-        archived = self.archive_file_sent(data)
-        if not archived:
-            raise ValueError("Error: Failed to archive file!!")
+        self.archive_file_sent(data)
+
         for k, v in self.process_types.items():
-            if not isinstance(k, function):
-                return {"error": "File type not supported yet!!"}
+            if not callable(k):
+                raise ValueError("Error: Instance is not callable!!")
             for item in v:
                 if data["name"].endswith(item):
+                    print(
+                        "Data found within file is: \n",
+                        repr(Path(data["path"]).read_text(encoding="utf-8")[:300]),
+                    )
                     return k(data, item)
         return self.check_zipfile_for_pk(data)
 
@@ -99,57 +103,83 @@ class ProcessFile:
 
         return self.process_entries(procs, data["id"])
 
-    def process_using_dfs(
-        self,
-        data: dict,
-        item: str,
-    ):
-        import pandas as pd
+    def process_using_dfs(self, data: dict, item: str, df: pd.DataFrame = None):
+        from io import BytesIO
 
-        df = None
-        procs = []
+        buffer = BytesIO(data["file"])
         if item.endswith("s") or item.endswith("x"):
             try:
                 df = pd.read_excel(data["path"])
             except Exception:
-                df = pd.read_excel(data["file"])
-
+                df = pd.read_excel(buffer)
         elif item.startswith(".js"):
             try:
-                df = pd.read_json(data["path"])
+                df = pd.read_json(data["path"], lines=False)
             except Exception:
-                df = pd.read_json(data["file"])
+                df = pd.read_json(buffer)
         elif item.startswith(".d") or item.startswith(".sq"):
             try:
                 df = pd.read_sql(data["path"])
             except Exception:
-                df = pd.read_sql(data["file"])
+                df = pd.read_sql(buffer)
         else:
             try:
                 df = pd.read_csv(data["path"])
             except Exception:
-                df = pd.read_csv(data["file"])
+                df = pd.read_csv(buffer)
 
-        for row in df.to_dict(orient="records"):
-            if row and row not in procs:
-                print("Adding row to process list: \n", row)
-                procs.append(row)
-
-        return self.process_entries(procs, data["id"])
+        if not len(df) or df is None:
+            raise ValueError("Failed to create df structure from passed file!!")
+        return self.process_entries(df.to_dict(orient="records"), data["id"])
 
     def archive_file_sent(self, data: dict, f: str = None):
+        from hashlib import sha256
+        import hmac
+
         if not isinstance(data["path"], Path):
             raise ValueError(
                 f'User path for archive not found or not path type with val: {data["path"]}'
             )
         data["path"] = data["path"] / f"{data['name']}"
-        if not data["path"].is_file():
-            f = "wb"
-        else:
+        if data["path"].is_file():
+            a = sha256(
+                Path(data["path"]).read_bytes(), usedforsecurity=False
+            ).hexdigest()
+            b = sha256(data["file"], usedforsecurity=False).hexdigest()
+            if hmac.compare_digest(a, b):
+                return print("File is of same dis-regarding copy!!")
             f = "ab"
+        else:
+            f = "wb"
+
         with data["path"].open(f"{f}") as file:
             file.write(data["file"])
-            return "Archived file with success!!"
+        p = data["path"].parent
+        if not p.is_dir():
+            raise ValueError("Error: Parent path not a dir!!")
+        if p.stat().st_size / (1024 * 2) >= 100:
+            output = p.parent.parent.parent.resolve() / "zipped_logs"
+            output.mkdir(exist_ok=True)
+            output = output / p.name
+
+            from zipfile import ZipFile as zip
+            from os.path import relpath
+
+            arcname = relpath(p, p.parent.resolve())
+            with zip(output, "w", compresslevel=9) as zipf:
+                zipf.write(p, arcname)
+                from subprocess import run
+
+                rm = run(["rm", "-rf", f"{p}"])
+                if rm.stderr:
+                    raise ValueError(
+                        f"Error: Run error occured with value: {rm.stderr.decode('utf-8')}"
+                    )
+                return print(
+                    f"Cleaned large dir with output: {rm.stdout.decode('utf-8')}"
+                )
+
+        return print("Archived file with success!!")
 
     def check_zipfile_for_pk(self, data: dict):
         from zipfile import is_zipfile, ZipFile

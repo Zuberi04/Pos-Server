@@ -5,14 +5,13 @@ from services.auth.validate import auth_validate
 from services.pos.fetch import q_fetch
 from services.pos.entries.entries import entries
 
-
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    #client_manager=socketio.AsyncRedisManager("redis://localhost:6379"),
+    # client_manager=socketio.AsyncRedisManager("redis://localhost:6379"),
     cors_allowed_origins="*",
     transports=["websocket", "polling"],
     async_handlers=True,
-    engineio_logger=True
+    engineio_logger=True,
 )
 
 
@@ -50,7 +49,7 @@ async def authenticate(sid, data: dict):
     res["ts"] = await io.timestamp()
     if "error" in res:
         return await sio.emit("auth-error", res, to=sid)
-    
+
     return await sio.emit("authenticated", res, to=sid)
 
 
@@ -83,13 +82,13 @@ async def fetch_inventory(sid, data: dict):
 
     auth = await io.check_otp_validity(data["id"])
     if auth:
-        return await sio.emit('inventory-error', auth, to=sid)
+        return await sio.emit("inventory-error", auth, to=sid)
     inventory = await q_fetch.fetch_data(data)
     if inventory:
         return await sio.emit(
             "inventory",
             {
-                "data":{'inventory': inventory},
+                "data": {"inventory": inventory},
                 "ts": await io.timestamp(),
             },
             to=sid,
@@ -110,7 +109,7 @@ async def fetch_catalog(sid, data: dict):
         return await sio.emit(
             "catalog",
             {
-                "data":{'catalog': catalog},
+                "data": {"catalog": catalog},
                 "ts": await io.timestamp(),
             },
             to=sid,
@@ -159,8 +158,8 @@ async def record_entry(sid, data: dict):
 async def file_entry(sid, data: dict):
     if not data:
         return await sio.emit("file-error", await io.no_data_sent(), to=sid)
-    
-    auth = await io.check_otp_validity(data["id"])
+
+    auth = await io.check_otp_validity(data[0]["id"])
     if not auth is None:
         return await sio.emit("file-error", auth, to=sid)
     res = entries.collect_file(data)
@@ -184,7 +183,7 @@ async def me(sid, data: dict):
     auth = await io.check_otp_validity(data["id"])
     if auth:
         return await sio.emit("me-error", auth, to=sid)
-    
+
     res = q_fetch.fetch_user_profile(data)
     if res:
         return await sio.emit("me", {"me": res, "ts": await io.timestamp()}, to=sid)
@@ -195,15 +194,13 @@ async def me(sid, data: dict):
 async def collect_analysis(sid, data: dict):
     if not data:
         return await io.generic_error(sid)
-    auth = await io.check_otp_validity(data['id'])
+    auth = await io.check_otp_validity(data["id"])
     if auth:
-        return await sio.emit('analysis-error', auth, to=sid)
-    
+        return await sio.emit("analysis-error", auth, to=sid)
+
     res = await io.collect_db_analysis(data)
-    res['ts'] = await io.timestamp()
-    if 'error' in res:
-        return await sio.emit('anlys-error', res, to=sid)
-    
-    return await sio.emit('analysis', res, to=sid)
+    res["ts"] = await io.timestamp()
+    if "error" in res:
+        return await sio.emit("anlys-error", res, to=sid)
 
-
+    return await sio.emit("analysis", res, to=sid)
