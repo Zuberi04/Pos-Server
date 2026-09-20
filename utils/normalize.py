@@ -175,7 +175,7 @@ class NormalizeData:
                 continue
             elif not col["k"] in data:
                 for x, y in data.items():
-                    if x.find('id') != -1 and x.find('_') == -1:
+                    if x.find("id") != -1 and x.find("_") == -1:
                         continue
                     if isinstance(y, col["t"].python_type):
                         if x in self.flags:
@@ -193,13 +193,15 @@ class NormalizeData:
                     continue
             for k, v in data.items():
                 if k.find("id") != -1:
-                    if k.find('_') == -1:
+                    if k.find("_") == -1:
                         continue
                 elif col["k"] != k:
                     continue
                 elif not isinstance(v, col["t"].python_type):
-                    if not isinstance(v, int):
-                        raise TypeError(f"Error, malformed value type on data: {v} for key {k} with type: {col['t'].python_type}")
+                    if not isinstance(v, (int, float)):
+                        raise TypeError(
+                            f"Error, malformed value type on data: {v} for key {k} with type: {col['t'].python_type}"
+                        )
                     v = float(v)
                 res[k] = v
                 continue

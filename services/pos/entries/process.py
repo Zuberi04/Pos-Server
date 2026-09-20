@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 from pathlib import Path
 from typing import Any
@@ -43,6 +45,7 @@ class ProcessFile:
         elif ext is None:
             data["path"] = self.path / f"{data['id'].split('-')[-1]}"
             data["path"].mkdir(exist_ok=True)
+            data["path"] = data["path"] / f"{data['name']}"
 
         self.archive_file_sent(data)
 
@@ -51,10 +54,6 @@ class ProcessFile:
                 raise ValueError("Error: Instance is not callable!!")
             for item in v:
                 if data["name"].endswith(item):
-                    print(
-                        "Data found within file is: \n",
-                        repr(Path(data["path"]).read_text(encoding="utf-8")[:300]),
-                    )
                     return k(data, item)
         return self.check_zipfile_for_pk(data)
 
@@ -107,21 +106,23 @@ class ProcessFile:
         from io import BytesIO
 
         buffer = BytesIO(data["file"])
-        if item.endswith("s") or item.endswith("x"):
+        if item.endswith(("s", "x", "sb")):
             try:
-                df = pd.read_excel(data["path"])
+                df = pd.read_excel(data["path"], engine="calamine")
             except Exception:
-                df = pd.read_excel(buffer)
+                df = pd.read_excel(buffer, engine="calamine")
         elif item.startswith(".js"):
             try:
                 df = pd.read_json(data["path"], lines=False)
             except Exception:
                 df = pd.read_json(buffer)
-        elif item.startswith(".d") or item.startswith(".sq"):
+        elif item.startswith((".d", ".sq")):
+            from database.config import engine
+
             try:
-                df = pd.read_sql(data["path"])
+                df = pd.read_sql(data["path"], con=engine.connect())
             except Exception:
-                df = pd.read_sql(buffer)
+                df = pd.read_sql(buffer, con=engine.connect())
         else:
             try:
                 df = pd.read_csv(data["path"])
@@ -140,8 +141,7 @@ class ProcessFile:
             raise ValueError(
                 f'User path for archive not found or not path type with val: {data["path"]}'
             )
-        data["path"] = data["path"] / f"{data['name']}"
-        if data["path"].is_file():
+        elif data["path"].is_file():
             a = sha256(
                 Path(data["path"]).read_bytes(), usedforsecurity=False
             ).hexdigest()
@@ -262,19 +262,23 @@ class ProcessFile:
 
     @staticmethod
     def clean_record(record: dict):
-        for k, v in record.items():
-            k = k.lower().strip()
-            if not isinstance(v, str):
-                if isinstance(v, dict):
-                    for m, n in v.items():
-                        if isinstance(n, str):
-                            n = n.lower().strip()
-                        v[m.lower().strip()] = n
-            else:
-                v = v.lower().strip()
-            record[k] = v
+        rec = {}
+        for k in record.keys():
+            rec[k.lower().strip()] = None
+            if not isinstance(record[k], str):
+                if isinstance(record[k], dict):
+                    for m in record[k].keys():
+                        if isinstance(record[k][m], str):
+                            rec[k][m.lower().strip()] = record[k][m].lower().strip()
+                        else:
+                            rec[k][m.lower().strip()] = record[k][m]
 
-        return record
+                else:
+                    rec[k] = record[k]
+            else:
+                rec[k] = record[k].lower().strip()
+
+        return rec
 
     @staticmethod
     def find_model(record: dict, key: str = None):
