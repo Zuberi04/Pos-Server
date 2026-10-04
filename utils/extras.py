@@ -14,17 +14,14 @@ from database.models import (
 )
 
 
-
-
 def hash_jwt_key_for_user(user_id: str):
     if not user_id:
-        raise ValueError('Error, missing id for hash generation!!')
-    return sha256(user_id.encode('utf-8')).hexdigest()
-
-def create_user_cache_key(id: str):
-    return f'user:{id}'
+        raise ValueError("Error, missing id for hash generation!!")
+    return sha256(user_id.encode("utf-8")).hexdigest()
 
 
+def create_user_cache_key(data: str):
+    return data if data.startswith("user") else f"user:{data}"
 
 
 MODELS = [
@@ -78,4 +75,20 @@ def decode_json_objects(data: str):
             return ast.literal_eval(cleaned_data)
         except Exception:
             # If everything fails, return the cleaned raw string or raise
-            raise ValueError(f"Failed to parse cleaned data payload: {cleaned_data}")
+            return cleaned_data
+            # raise ValueError(f"Failed to parse cleaned data payload: {cleaned_data}")
+
+
+def clean_str(data: str):
+    return data.lower().strip()
+
+
+def clean_data(data: dict):
+    for k, v in data.copy().items():
+        data = {x: data[x] for x in data.keys() if x != k}
+        if isinstance(v, str):
+            data[clean_str(k)] = clean_str(v)
+        else:
+            data[clean_str(k)] = v
+    print("Cleaned data with values: \n", data)
+    return data

@@ -5,7 +5,7 @@ class FileEntries:
     def __init__(self):
         self.suffixes = [".xlxs", ".xls", ".docx", ".pdf", ".csv"]
 
-    def collect_file(self, data: dict):
+    async def collect_file(self, data: dict):
         if not data:
             return {"error": "File not passed for processing!"}
         size = 0
@@ -14,15 +14,15 @@ class FileEntries:
             if not isinstance(file, dict):
                 raise ValueError("Error: File passed is malformed")
             size += file["size"] / 1024 / 1024
-            proc_file.detect_process_type(file)
+            res.extend(await proc_file.detect_process_type(file))
 
-        return f"Success Processing files with size: {size}"
+        return {"msg": f"Success Processing files with size: {size}"}
 
-    def add_entry_to_database(self, data: dict):
+    async def add_entry_to_database(self, data: dict):
         if not "entries" in data:
             return {"error": "No entries sent to db for processing!!"}
 
-        return proc_file.process_entries(data)
+        return await proc_file.process_entries(data)
 
     @staticmethod
     def clean_file_buffer(file: str | bytes):

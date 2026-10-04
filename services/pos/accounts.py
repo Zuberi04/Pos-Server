@@ -1,208 +1,144 @@
 from services.pos.fetch import q_fetch
-from services.analysis.graph import gen_graph
+from r_services.service import r_service
 
 
 class Accounts:
-
     def __init__(self):
         pass
 
-    async def collect_data_to_process(self, data: dict):
-        if not "name" in data:
-            data["name"] = "inventory"
+    async def collect_data_to_process(
+        self, data: dict, proc: list = [], flag: str = None, diff: float = None
+    ):
+        if not flag:
+            cached = await r_service.collect_cache(data["id"], "accounts")
+            if cached:
+                graph = await r_service.collect_cache(data["id"], "graph")
+                if graph:
+                    from utils.extras import decode_json_objects
+
+                    return {
+                        "accounts": decode_json_objects(cached),
+                        "graph": decode_json_objects(graph),
+                    }
+        else:
+            data["name"] = flag
         inventory = await q_fetch.fetch_data(data)
-        if not inventory:
-            return {"error": "No records to balance your pos accounts!!"}
+        if not inventory or "error" in inventory:
+            return {"error": "No records to balance your accounts!!"}
         elif isinstance(inventory, dict):
-            return {"error": "Records held to few for any relevant calculations!!"}
-
-        proc = []
+            inventory = [inventory]
         for record in inventory:
-            if not record:
-                continue
-            q = {"name": "catalog", "q": record["id"], "relshp": "sales"}
-            results = q_fetch.collect_query(q)
-            if not results:
-                raise ValueError(
-                    f"Error, failed getting query for inv record with id: {record['id']}"
+            if record:
+                r = await q_fetch.collect_query(
+                    {"name": "catalog", "q": record["id"], "relshp": "sales"}
                 )
-            elif not "sales" in results:
-                continue
-            record["rels"] = results
-            if not record in proc:
-                proc.append(record)
-            continue
-        if not proc:
-            return {"error": "Not enough sales made for calculation and analysis!!"}
-        return self.balance_accounts(proc, data["id"])
+                if r and not "error" in r:
+                    record["rels"] = r
+                elif record not in proc:
+                    proc.append(record)
 
-    def balance_accounts(self, data: list, id: str):
+        return (
+            await self.diff_process_accounts_data(proc, data, diff)
+            if not flag
+            else proc
+        )
+
+    async def diff_process_accounts_data(
+        self,
+        procs: list,
+        data: dict,
+        diff: float = None,
+        dr: dict = {"data": [], "total": 0},
+        cr: dict = {"data": [], "total": 0},
+    ):
         gp = 0
-        for record in data:
-            if not record:
-                continue
-            rec = {"stock": record["stock"], "amount": record["amount"]}
-            if isinstance(record["rels"], dict):
-                rec["product"] = record["rels"]["stock"]
-                rec["quantity"] = record["rels"]["sales"]["quantity"]
-                i = data.index(record)
-                cos = self.calculate_price_of_good_sold(rec)
-                record["rels"]["cog"] = cos
-                gp += self.trading_account(record["rels"]["amount"], cos)
-                data[i] = record
-                continue
-
-            for recs in record["rels"]:
-                if "sales" in recs:
-                    rec["product"] = recs["stock"]
-                    rec["quantity"] = recs["sales"]["quantity"]
-                    i = record["rels"].index(recs)
-                    cos = self.calculate_price_of_good_sold(rec)
-                    recs["price"] = cos
-                    record["rels"][i] = recs
-                    gp += self.trading_account(recs["sales"]["amount"], cos)
-                continue
-
-        np = self.profit_loss_account(gp, id)
-        return self.create_balance_sheet(np, data, id)
-
-    @staticmethod
-    def trading_account(sales: float, cos: float):
-        """G.P = Sales - C.O.G sold"""
-        return sales - cos
-
-    @staticmethod
-    def calculate_price_of_good_sold(data: dict):
-        total = (data["product"] / data["stock"]) * data["amount"]
-        if not total:
-            raise ValueError("Error, failed calculating totals for product passed!!")
-        return (data["quantity"] / data["product"]) * total
-
-    def profit_loss_account(self, gp: float, id: str):
-        """N.p = G.P - E"""
-        expense = self.fetch_and_calculate_expenses(id)
-        return gp - expense
-
-    def create_balance_sheet(self, np: float, data: list, id: str):
-        """A = C + L"""
-        res, acc = self.balance_sheet(data)
-        a = acc["assets"] + np
-        c = acc["credits"] + acc["liability"]
-        if a != c:
-            return self.create_balance_sheet(np, data)
-        res["total"] = a
-        res["assets"].append({"profit": np})
-        return self.clean_balance_sheet_data(res, id)
-
-    def balance_sheet(self, inventory: list):
-        """A = C + L"""
-        print("Length of inventory passed: ", len(inventory))
-        res = {"capital": 0, "assets": 0, "liability": 0}
-        resp: dict = {"assets": [], "credits": []}
-        for record in inventory:
-            if not "flag" in record:
-                raise ValueError("Malformed data pased or missing values passed!!")
-            if record["flag"] != "non-assets":
-                if record not in resp["assets"]:
-                    resp["assets"].append(record)
-                    res["assets"] += record["amount"]
-                    debtor = self.fetch_extras({"name": "creditors", "q": record["id"]})
-                    if debtor:
-                        if debtor not in resp["credits"]:
-                            resp["credits"].append(debtor)
-                            res["liability"] += debtor["amount"]
-                        continue
-                    continue
-                continue
-            elif not isinstance(record["rels"], list):
-                if record["rels"] not in resp["credits"]:
-                    resp["credits"].append(record["rels"])
-                    res["assets"] += record["rels"]["price"]
-                    resp["assets"].append({"stock": record["rels"]["price"]})
-                    res["capital"] += self.calculate_total_for_record(record["rels"])
-                    debtor = self.fetch_extras({"name": "creditors", "q": record["id"]})
-                    if debtor:
-                        if debtor["p_id"] != record["rels"]["id"]:
-                            continue
-                        elif debtor not in resp["credits"]:
-                            resp["credits"].append(debtor)
-                            res["liability"] += debtor["amount"]
-                        continue
-                    continue
-                continue
-            for rec in record["rels"]:
-                if rec not in resp["credits"]:
-                    resp["credits"].append(rec)
-                    res["assets"] += rec["price"]
-                    res["capital"] += self.calculate_total_for_record(rec)
-                    debtor = self.fetch_extras({"name": "creditors", "q": record["id"]})
-                    if debtor:
-                        if debtor["p_id"] != rec["id"]:
-                            continue
-                        elif debtor not in resp["credits"]:
-                            resp["credits"].append(debtor)
-                            res["liability"] += debtor["amount"]
-                        continue
-                    continue
-                continue
-            continue
-        return (resp, res)
-
-    def calculate_total_for_record(data: dict):
-        return data["cog"]
-
-    @staticmethod
-    def fetch_extras(name: str, q: dict = None):
-        if q:
-            return q_fetch.collect_query(q)
-        return q_fetch.fetch_data(name)
-
-    @staticmethod
-    def fetch_and_calculate_expenses(id: str):
-        expenses = q_fetch.fetch_data({"name": "operationexpenses", "id": id})
-        if not expenses:
-            return 0
-        if not isinstance(expenses, list):
-            if "error" in expenses:
-                return 0
-            return expenses["amount"]
-        e = 0
-        for expense in expenses:
-            e += expense["amount"]
-            continue
-        return e
-
-    @staticmethod
-    def clean_balance_sheet_data(data: dict, id: str):
-        result = {"assets": [], "credits": [], "total": 0}
-        result["total"] = data["total"]
-        for k, v in data.items():
-            if k != "assets":
-                if k != "credits":
-                    continue
-                for item in v:
-                    if "brand" in item:
-                        item["name"] = item["brand"]
-                        del item["brand"]
-                        if item not in result["credits"]:
-                            result["credits"].append(item)
-                        continue
-                    continue
-                continue
-            for item in v:
-                if "category" in item:
-                    item["name"] = item["category"]
-                    del item["category"]
-                    if item not in result["assets"]:
-                        result["assets"].append(item)
-                    continue
-                continue
-            continue
+        for r in procs:
+            if not "rels" in r and r not in dr["data"]:
+                procs = [x for x in procs if x != r]
+                r["credit"] = await q_fetch.collect_query(
+                    {"name": "creditors", "q": r["id"]}
+                )
+                dr["data"].append(r)
+                if r["credit"] and not "error" in r["credit"]:
+                    if r["credit"] not in cr["data"]:
+                        cr["data"].append(r["credit"])
+                        cr["total"] += r["credit"]["amount"]
+                dr["total"] += r["amount"]
+            else:
+                for x in r["rels"]:
+                    x["credit"] = await q_fetch.collect_query(
+                        {"name": "creditors", "q": x["id"]}
+                    )
+                    if "sales" in x and x not in cr["data"]:
+                        x["owed"] = await q_fetch.collect_query(
+                            {"name": "credited", "q": x["sales"]["id"]}
+                        )
+                        cr["data"].append(x["sales"])
+                        cr["total"] += x["sales"]["amount"]
+                        if x["owed"] and not "error" in x["owed"]:
+                            if x["owed"] not in cr["data"]:
+                                x["owed"]["owed"] = True
+                                cr["data"].append(x["owed"])
+                                cr["total"] += x["owed"]["amount"]
+                        gp += self.calculate_gp_or_cog(x)
+                    elif x not in dr["data"]:
+                        dr["data"].append(x)
+                        dr["total"] += self.calculate_gp_or_cog(x)
+                        if not "sales" in x:
+                            cr["data"].append(x)
+                            cr["total"] += self.calculate_gp_or_cog(x)
+                            procs = [y for y in procs if y != r]
+                        elif x["credit"] and not "error" in x["credit"]:
+                            if x["credit"] not in cr["data"]:
+                                cr["data"].append(x["credit"])
+                                cr["total"] += x["credit"]["amount"]
+        expense = await self.collect_data_to_process(data, flag="expense")
+        if expense:
+            if isinstance(expense, dict):
+                if not "error" in expense:
+                    expense = [expense]
+            for e in expense:
+                if e not in cr["data"]:
+                    gp -= e["amount"]
+                    cr["data"].append(e)
+                    cr["total"] += e["amount"]
+        dr["data"].append({"profit": gp})
+        dr["total"] += gp
+        if cr["total"] != dr["total"]:
+            if diff:
+                if diff < 0:
+                    cr["total"] += diff
+                else:
+                    dr["total"] -= diff
+            elif cr["total"] != dr["total"]:
+                return await self.collect_data_to_process(
+                    data, diff=dr["total"] - cr["total"]
+                )
+        r_service.cache_data(
+            data["id"], {"accounts": {"assets": dr, "credit": cr}}, 3600
+        )
+        from services.analysis.graph import gen_graph
 
         return {
-            "accounts": result,
-            "analysis": gen_graph.collect_req_data_for_graph({"id": id}),
+            "accounts": {"assets": dr, "credit": cr},
+            "analysis": await gen_graph.collect_req_data_for_graph(procs, data),
         }
+
+    @staticmethod
+    def calculate_gp_or_cog(x: dict):
+        from utils.cog_pricing import est_price
+
+        if "sales" in x:
+            return x["sales"]["amount"] - (
+                est_price.calculate_cog_from_r_price(
+                    {y: x[y] for y in x.keys() if y != "sales"}
+                )["amount"]
+                * x["stock"]
+                + x["owed"]["amount"]
+                if "owed" in x and not "error" in x["owed"]
+                else 0
+            )
+        return est_price.calculate_cog_from_r_price(x)["amount"] * x["stock"]
 
 
 accounts = Accounts()

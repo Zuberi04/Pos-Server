@@ -16,23 +16,33 @@ r_client = redis.Redis(
 
 class RedisServices:
     def __init__(self):
-        self.ex: float = 3600
+        pass
 
     def cache_data(self, key: str, data: dict, expire: float = None):
-        self.ex = 3600
-        if not expire is None:
-            self.ex = expire
         for k, v in data.items():
             if not isinstance(v, str):
                 data[k] = str(v)
-                continue
-            continue
-        cache = r_client.hset(create_user_cache_key(key), mapping=data)
-        return r_client.expire(create_user_cache_key(key), expire) if expire else cache
+
+        from utils.stmt import read_stmt
+
+        cache = r_client.hset(
+            create_user_cache_key(read_stmt.convert_id(key)), mapping=data
+        )
+        return (
+            r_client.expire(create_user_cache_key(read_stmt.convert_id(key)), expire)
+            if expire
+            else cache
+        )
 
     @staticmethod
-    async def collect_cache(key: str):
-        return r_client.hgetall(create_user_cache_key(key))
+    async def collect_cache(key: str, flag: str = None):
+        from utils.stmt import read_stmt
+
+        return (
+            r_client.hgetall(create_user_cache_key(read_stmt.convert_id(key)))
+            if not flag
+            else r_client.hget(create_user_cache_key(read_stmt.convert_id(key)), flag)
+        )
 
 
 r_service = RedisServices()

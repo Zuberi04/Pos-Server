@@ -2,123 +2,88 @@
 import networkx as nx
 
 
-from database.models import Sales, Inventory, Catalog
-from utils.stmt import read_stmt
-from services.analysis.analysis import graph_anlys
-
-
-class AnalysisOfDb:
+class GraphSales:
     def __init__(self):
         pass
 
-    def collect_req_data_for_graph(self, data: dict):
-        if not "id" in data:
-            return ValueError('Error, missing id for user to collect analysis')
-        inventory = read_stmt.read_stmt(Inventory, query=data["id"])
-        if not inventory:
-            return ValueError('Error, missing data for analysis collection!!')
-        catalog: dict | list = None
-        if not isinstance(inventory, list):
-            catalog = read_stmt.read_stmt(Catalog, query=inventory["id"])
-            if not catalog:
-                raise ValueError("Error, data not found in db!!")
-            return self.collect_sales(catalog)
-        for rec in inventory:
-            r = read_stmt.read_stmt(Catalog, query=rec["id"])
-            if not r:
-                raise ValueError("Error, data not found in db!!")
-            elif r not in catalog:
-                catalog.append(r)
-            continue
-        return self.collect_sales(catalog, data)
+    async def collect_req_data_for_graph(self, procs: list, data: dict):
+        if not procs:
+            raise ValueError("Error, no data passed for graph analysis!!")
+        g_data = []
+        for r in procs:
+            if "rels" in r:
+                if not isinstance(r["rels"], list):
+                    r["rels"] = [r["rels"]]
+                for x in r["rels"]:
+                    if "sales" in x:
+                        g_data.append(
+                            self.format_graph_data(
+                                {y: x[y] for y in x.keys() if y != "sales"}, x["sales"]
+                            )
+                        )
+        return await self.plot_revenue_against_products(g_data, data)
 
-    def collect_sales(self, catalog: list | dict, data: dict):
-        sales: dict | list = None
-        if not isinstance(catalog, list):
-            sales = read_stmt.read_stmt(Sales, query=catalog["id"])
-            if not isinstance(sales, list):
-                raise ValueError('Error, to few of sales data to collect analysis')
-        for rec in catalog:
-            r = read_stmt.read_stmt(Sales, query=rec["id"])
-            if not r:
-                continue
-            elif r not in sales:
-                sales.append(r)
-            continue
-        return self.analyse_sales(sales, catalog, data)
+    @staticmethod
+    def calc_r_of_sale(x: int, y: int):
+        return x / y * 100
 
-    def analyse_sales(self, sales: list, catalog: list, data: dict):
-        """
-        brand, r.p, profit, rate of sale, quantity
-        """
-        if not sales or not catalog:
-            raise ValueError("Error, data sets for analysis not passed!!")
-        result = []
-        for sale in sales:
-            if not isinstance(catalog, list):
-                rec = {
-                    "brand": catalog["brand"],
-                    "price": catalog["price"],
-                    "rate": ((sale["quantity"] / catalog["stock"]) * 100),
-                    "profit": sale["amount"] - catalog["price"],
-                    "quantity": sale["quantity"],
-                }
-                if rec not in result:
-                    result.append(rec)
-                continue
-            for log in catalog:
-                if log["id"] != sale["id"]:
-                    continue
-                rec = {
-                    "brand": log["brand"],
-                    "price": log["price"],
-                    "rate": ((sale["quantity"] / log["stock"]) * 100),
-                    "profit": sale["amount"] - log["price"],
-                    "quantity": sale["quantity"],
-                }
-                if rec not in result:
-                    result.append(rec)
-                break
-            continue
+    def format_graph_data(self, x: dict, y: dict, res: dict = {}):
+        for k in x.copy().keys():
+            if not k.endswith(("id", "ed")):
+                for m in y.keys():
+                    if not m.endswith(("id", "ed")):
+                        if isinstance(y[m], type(x[k])):
+                            if isinstance(x[k], (float, int)):
+                                if isinstance(x[k], int):
+                                    if not m in res:
+                                        res[m] = y[m]
+                                        res["rate"] = self.calc_r_of_sale(x[k], y[m])
+                                else:
+                                    if "rate" and not k in res:
+                                        from utils.cog_pricing import est_price
 
-        return self.plot_revenue_against_products(result, data)
+                                        res[k] = x[k]
+                                        res["profit"] = (
+                                            y[m]
+                                            - est_price.calculate_cog_from_r_price(x)[
+                                                "amount"
+                                            ]
+                                            * res["rate"]
+                                        )
+                        elif isinstance(x[k], str) and not k in res:
+                            res[k] = x[k]
+        return res
 
-    def plot_revenue_against_products(self, result: list, data: dict):
-        if not result:
+    async def plot_revenue_against_products(self, result: list, data: dict):
+        if not result or not data:
             raise ValueError("Error, data not passed for plotting")
         G = nx.DiGraph()
         # nodes
-        for item in result:
-            G.add_node(item["brand"], weight=item["quantity"])
+        for r in result:
+            G.add_node(r["brand"], weight=r["quantity"])
             try:
-                nxt = result[result.index(item) + 1]
+                nxt = result[result.index(r) + 1]
             except IndexError:
-                nxt = item
+                nxt = r
             G.add_edge(
-                u_of_edge=item["brand"],
+                u_of_edge=r["brand"],
                 v_of_edge=nxt["brand"],
-                rate=item["rate"],
-                profit=item["profit"],
-                price=item["price"],
+                rate=r["rate"],
+                profit=r["profit"],
+                price=r["price"],
             )
-            continue
-
         try:
             pos = nx.nx_agraph.graphviz_layout(G, prog="dot")
         except:
-            print("Graphiz lib couldnot be found!!")
+            print("Graphiz lib could not be found!!")
             pos = nx.kamada_kawai_layout(G)
         node_sizes = []
         for node in G.nodes(data=True):
-            s = node[1]["weight"] * 10
-            if s not in node_sizes:
-                node_sizes.append(s)
-
+            node_sizes.append(node[1]["weight"] * (len(result) / len(node)))
         edge_widths = []
         for u, v in G.edges():
             edge = G[u][v]
-            edge_widths.append((edge["profit"] * edge["rate"]))
-
+            edge_widths.append((edge["price"] / edge["rate"]))
         nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color="purple")
         # draw edges
         nx.draw_networkx_edges(
@@ -134,7 +99,7 @@ class AnalysisOfDb:
         for node in G.nodes(data=True):
             edge = G.edges(node)
             edge_labels.append(
-                edge[1]["price"] if "price" in edge[1] else edge[2]["price"]
+                edge[1]["profit"] if "profit" in edge[1] else edge[2]["profit"]
             )
         nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
@@ -144,19 +109,18 @@ class AnalysisOfDb:
         # closeness to centrality
         c_central = nx.closeness_centrality(G)
         nx.set_node_attributes(G, c_central, "closeness")
-
         # collect betweeness values from centrality of the graph
         btw_centrality = nx.betweenness_centrality(G)
         nx.set_node_attributes(G, btw_centrality, "betweeness")
-
         # collect algebra connection btw nodes
         algebra_conn = nx.algebraic_connectivity(G)
         nx.set_node_attributes(G, algebra_conn, "al_con")
+        print(
+            f"Graph is_directed ? { G.is_directed()} with values: \n {G}",
+        )
+        from services.analysis.analysis import graph_anlys
 
-        print("Graph is undirected: ", G.is_directed())
-        print("Graph is directed with values: \n\t", G)
-
-        return graph_anlys.analyze_graph(G, data["id"])
+        return await graph_anlys.analyze_graph(G, data["id"])
 
 
-gen_graph = AnalysisOfDb()
+gen_graph = GraphSales()

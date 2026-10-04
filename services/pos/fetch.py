@@ -1,5 +1,7 @@
+from typing import Any
+
 from utils.stmt import read_stmt
-from utils.extras import MODELS, decode_json_objects
+from utils.extras import MODELS, decode_json_objects, clean_str
 from r_services.service import r_service
 
 
@@ -9,190 +11,133 @@ class FetchQueryData:
         self.models = MODELS
 
     async def fetch_data(self, data: dict):
-        res = await r_service.collect_cache(data["id"])
-        exist = self.check_k_matches_cache(res, data["name"])
-        if exist:
-            updated = await self.check_if_db_size_updated(data)
-            if updated is None:
+        res = await r_service.collect_cache(data["id"], data["name"])
+        if res:
+            res = decode_json_objects(res)
+            upd = self.check_if_db_size_updated(data, res["size"])
+            if not isinstance(upd, bool):
                 raise ValueError(
                     f"Error, size of db not for model with name: {data['name']}"
                 )
-            elif not updated:
-                return self.clean_data_for_response(
-                    decode_json_objects(res[data["name"]])["data"]
+            elif not upd:
+                return {data["name"]: res["data"]}
+        for model in self.models:
+            from utils.rel import relshp
+
+            if clean_str(data["name"]) in clean_str(model.__name__):
+                if not "id" in data:
+                    return {"error": "No key to access data!!"}
+                elif data["name"].startswith(("inv", "oper")):
+                    return self.clean_data_for_response(
+                        read_stmt.read_stmt(model, data["id"]), data, model
+                    )
+                return await self.find_n_model_data(
+                    data, model, relshp.check_if_model_contains_relations(model)[0]
                 )
 
-        for model in self.models:
-            if data["name"].find("log") == -1:
-                if data["name"].find("les", 2) == -1:
-                    if data["name"].find("ory", 4) == -1:
-                        return {"error": "Error, menu action not of type db action!!"}
-                    elif model.__name__.lower() != data["name"]:
-                        continue
-                    res = read_stmt.read_stmt(model, query=data["id"])
-                    if not res:
-                        return {"error": "No data in model query for current user!!"}
-                    r_service.cache_data(
-                        data["id"],
-                        {data["name"]: {"data": res, "size": model().table_size()}},
-                    )
-                    return self.clean_data_for_response(res)
-                data["flag"] = data["name"]
-                data["name"] = "catalog"
-
-            elif model.__name__.lower() != "inventory":
-                continue
-            inv = read_stmt.read_stmt(model, query=data["id"])
-            if not inv:
-                return {"error": "No data in model query for current user!!"}
-            r_service.cache_data(
-                data["id"],
-                {model.__name__.lower(): {"data": inv, "size": model().table_size()}},
-            )
-            return self.fetch_act_user_db_query(inv, data)
         return {"error": "Invalid query to table!!"}
 
-    async def check_if_db_size_updated(self, data: dict):
+    async def find_n_model_data(
+        self, data: dict, model: Any, p_tn: str, n_find: list = []
+    ):
+        cached = await r_service.collect_cache(data["id"], "inventory")
+        if cached:
+            cached = decode_json_objects(cached)
+        else:
+            from database.models import Inventory
+
+            cached = read_stmt.read_stmt(Inventory, data["id"])
+
+        if not cached:
+            return {"error": "No data exist in rel to you!!"}
+        elif not isinstance(cached, list):
+            cached = [cached]
+
+        def find_next_data(cached: list, m: Any, result: list = []):
+            for c in cached:
+                r = read_stmt.read_stmt(m, c["id"])
+                if r:
+                    if not isinstance(r, list):
+                        result.append(r)
+                    else:
+                        result.extend(r)
+            return result
+
+        while p_tn != Inventory.__tablename__:
+            from utils.rel import relshp
+
+            for m in self.models:
+                if m.__tablename == p_tn:
+                    p_tn = relshp.check_if_model_contains_relations(m)[0]
+                    n_find.append(model)
+                    break
+        n_find.insert(0, model)
+        i = len(n_find) - 1
+        while i:
+            cached = find_next_data(cached, n_find[i])
+            if not cached:
+                raise ValueError("Failed to find n data!!")
+            i -= 1
+
+        return self.clean_data_for_response(cached, data, model)
+
+    def check_if_db_size_updated(self, data: dict, size: int):
         for model in self.models:
-            if model.__name__.lower() != data["name"]:
-                continue
-            prev = await r_service.collect_cache(data["id"])
-            prev = decode_json_objects(prev[data["name"]])
-            if not "size" in prev or int(prev["size"]) != model().table_size():
-                return True
-            return False
+            if model.__name__.lower() == data["name"]:
+                if model().table_size() != size:
+                    return True
+                return False
         return None
 
-    def fetch_act_user_db_query(self, res: list | dict, data: dict):
-        print("Fetching data actual query!!")
-        for model in self.models:
-            if model.__name__.lower() != data["name"]:
-                continue
-            elif isinstance(res, dict):
-                records = read_stmt.read_stmt(model, query=res["id"])
-                if not records:
-                    raise ValueError("Error, failed finding record from catalog!!")
-                r_service.cache_data(
-                    data["id"],
-                    {data["name"]: {"data": records, "size": model().table_size()}},
-                )
-                return (
-                    self.clean_data_for_response(records)
-                    if not "flag" in data
-                    else self.find_sales_in_data(records, data)
-                )
-            result = []
-            for record in res:
-                records = read_stmt.read_stmt(model, record["id"])
-                if not records:
-                    raise ValueError("Error, failed finding record from catalog!!")
-                elif not isinstance(records, list):
-                    if records not in result:
-                        result.append(records)
-                    continue
-                elif records not in result:
-                    result.extend(records)
-                continue
-            r_service.cache_data(
-                data["id"],
-                {data["name"]: {"data": result, "size": model().table_size()}},
-            )
-            return (
-                self.clean_data_for_response(result)
-                if not "flag" in data
-                else self.find_sales_data(result, data)
-            )
-        return {"error": "Invalid query to table!!"}
-
-    def find_sales_in_data(self, result: dict | list, data: dict):
-        for model in self.models:
-            if model.__name__.lower() != data["flag"]:
-                continue
-            if not isinstance(result, list):
-                record = read_stmt.read_stmt(model, query=result["id"])
-                if not record:
-                    return {
-                        "error": f"No sales record found for product {result} in inventory!!"
-                    }
-                r_service.cache_data(
-                    data["id"],
-                    {data["flag"]: {"data": record, "size": model().table_size()}},
-                )
-                return self.clean_data_for_response(record)
-            records = []
-            for res in result:
-                record = read_stmt.read_stmt(model, query=res["id"])
-                if not record:
-                    continue
-                elif record not in records:
-                    records.append(record)
-                continue
-            r_service.cache_data(
-                data["id"],
-                {data["flag"]: {"data": records, "size": model().table_size()}},
-            )
-            return self.clean_data_for_response(records)
-        return {"error": "Invalid query to table!!"}
-
-    def clean_data_for_response(self, data: list | dict):
-        records = []
-        if isinstance(data, dict):
-            return read_stmt.delete_unneeded_data(data)
+    def clean_data_for_response(
+        self, data: list | dict, creds: dict, model: Any = None, records: list = []
+    ):
+        if not data:
+            return {"error": "No data exist in db for query sent"}
+        elif not isinstance(data, list):
+            data = [data]
         for record in data:
-            if not record:
-                continue
-            record = read_stmt.delete_unneeded_data(record)
-            if record not in records:
-                records.append(record)
-                continue
-            continue
-        return records
+            records.append(read_stmt.delete_unneeded_data(record))
+        if not model:
+            r_service.cache_data(creds["id"], {creds["name"] + creds["q"]: records})
+        else:
+            r_service.cache_data(
+                creds["id"],
+                {creds["name"]: {"data": records, "size": model().table_size()}},
+                3600,
+            )
+        return {data["name"]: records}
 
-    def collect_query(self, data: dict):
-        query = {}
-        for k, v in data.items():
-            if not isinstance(v, str):
-                query[k] = v
-                continue
-            query[k] = v.lower().strip()
-            continue
+    async def collect_query(self, data: dict):
+        from utils.extras import clean_data
 
+        data = clean_data(data)
+        res = await r_service.collect_cache(data["id"], data["name"] + data["q"])
+        if res:
+            return decode_json_objects(res)
         for model in self.models:
-            if model.__name__.lower().strip() != query["name"]:
+            if model.__name__.lower().strip() != data["name"]:
                 continue
-            res = read_stmt.read_stmt(model, query=query["q"])
+            res = read_stmt.read_stmt(model, query=data["q"])
             if not res:
-                return {"error": f"No data exist in db for query sent"}
+                return {"error": f"No data exist in db for query {data['q']}"}
             elif "relshp" in data:
-
-                return self.collect_nxt_data_in_query(query, res)
-            return self.clean_data_for_response(res)
-
+                return self.collect_nxt_data_in_query(data, res)
+            return self.clean_data_for_response(res, data)
         return {"error": f"No data exist in db for query sent"}
 
     def collect_nxt_data_in_query(self, data: dict, res: dict | list):
+        if not isinstance(res, list):
+            res = [res]
         for model in self.models:
-            if model.__name__.lower() != data["relshp"]:
-                if model.__tablename__ != data["relshp"]:
-                    continue
-            elif isinstance(res, dict):
-                result = read_stmt.read_stmt(model, query=res["id"])
-                if not result:
-                    return self.clean_data_for_response(res)
-                res[data["relshp"]] = result
-                return self.clean_data_for_response(res)
-            records = []
-            for rec in res:
-                result = read_stmt.read_stmt(model, query=rec["id"])
-                if not result:
-                    if rec not in records:
-                        records.append(rec)
-                    continue
-                rec[data["relshp"]] = result
-                if rec not in records:
-                    records.append(rec)
-                continue
-            return self.clean_data_for_response(records)
+            names = [clean_str(model.__name__), clean_str(model.__tablename__)]
+            if data["relshp"] in names:
+                records = []
+                for r in res:
+                    r[data["relshp"]] = read_stmt.read_stmt(model, r["id"])
+                    records.append(r)
+                return self.clean_data_for_response(records, data)
+        return self.clean_data_for_response(res, data)
 
     @staticmethod
     def fetch_user_profile(data: dict):

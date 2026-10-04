@@ -80,7 +80,8 @@ class Inventory(Base):
 
     id = Column(GUID, default=uuid4, unique=True, nullable=False, primary_key=True)
     category = Column(String(50), unique=False, nullable=False)
-    stock = Column(Integer, nullable=True, default=0)
+    stock = Column(Integer, nullable=False, default=0)
+
     amount = Column(Float, nullable=False)
     mode = Column(String(30), nullable=False, name="mode", default="cash")
     user_id = Column(
@@ -88,7 +89,7 @@ class Inventory(Base):
         ForeignKey("admin_users.id", name="user_id", ondelete="CASCADE"),
         nullable=False,
     )
-    flag = Column(String(50), nullable=False, default="non-asset")
+    flag = Column(String(30), nullable=False, default="non-asset")
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
 
@@ -122,6 +123,7 @@ class Catalog(Base):
     )
     brand = Column(String, nullable=False, name="brand")
     stock = Column(Integer, nullable=False, name="stock", default=0)
+    min_stock = Column(Integer, nullable=False, default=0)
     price = Column(Float, nullable=False, name="price")
     i_id = Column(
         GUID,
@@ -149,7 +151,7 @@ class Catalog(Base):
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
-        return f"Catalog: (id={self.id}, brand={self.brand}, stock={self.stock}, price={self.price}, i_id={self.i_id}, created={self.created}, updated={self.updated})"
+        return f"Catalog: (id={self.id}, brand={self.brand}, stock={self.stock}, min_stock={self.min_stock},price={self.price}, i_id={self.i_id}, created={self.created}, updated={self.updated})"
 
 
 class Sales(Base):
@@ -225,10 +227,10 @@ class Creditors(Base):
     i_id = Column(
         GUID,
         ForeignKey("inventory.id", ondelete="CASCADE", name="i_id"),
-        nullable=False,
+        nullable=True,
     )
     p_id = Column(
-        GUID, ForeignKey("catalog.id", ondelete="CASCADE", name="p_id"), nullable=False
+        GUID, ForeignKey("catalog.id", ondelete="CASCADE", name="p_id"), nullable=True
     )
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
@@ -252,7 +254,7 @@ class OperationExpenses(Base):
     metadata
 
     id = Column(GUID, primary_key=True, nullable=False, unique=True, default=uuid4)
-    name = Column(String(50), nullable=False)
+    expense = Column(String(50), nullable=False)
     reason = Column(String(150), nullable=False, unique=True)
     user_id = Column(
         GUID,
@@ -273,4 +275,4 @@ class OperationExpenses(Base):
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
-        return f"Expenses: (id={self.id}, name={self.name}, reason={self.reason}, user_id={self.user_id} created={self.created}, updated={self.updated})"
+        return f"Expenses: (id={self.id}, expense={self.expense}, reason={self.reason}, user_id={self.user_id} created={self.created}, updated={self.updated})"
