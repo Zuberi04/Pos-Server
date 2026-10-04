@@ -19,4 +19,5 @@ env
 
 #Data logs
 pos_data/
-pos/data_logs/
+services/pos/data_logs/
+sys_logs/
