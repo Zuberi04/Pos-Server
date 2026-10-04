@@ -115,12 +115,12 @@ class Accounts:
                     data, diff=dr["total"] - cr["total"]
                 )
         r_service.cache_data(
-            data["id"], {"accounts": {"assets": dr, "credit": cr}}, 3600
+            data["id"], {"accounts": {"debits": dr, "credit": cr}}, 3600
         )
         from services.analysis.graph import gen_graph
 
         return {
-            "accounts": {"assets": dr, "credit": cr},
+            "accounts": {"debits": dr, "credits": cr},
             "analysis": await gen_graph.collect_req_data_for_graph(procs, data),
         }
 

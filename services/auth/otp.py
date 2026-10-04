@@ -19,10 +19,9 @@ class OtpGeneration:
                 self.create_otp_hash(used), stmt["otp"]
             ):
                 return {"error": "Invalid user accessing system"}
-            elif creds["token"]:
-                return creds
+            elif "token" in creds:
+                creds["upd"] = True
             return self.create_otp(creds, used)
-
         return self.create_otp(creds)
 
     def create_otp(self, creds: dict, used: list = None, mx=6 * 2 + 1):

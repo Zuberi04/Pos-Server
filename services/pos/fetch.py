@@ -140,13 +140,15 @@ class FetchQueryData:
         return self.clean_data_for_response(res, data)
 
     @staticmethod
-    def fetch_user_profile(data: dict):
+    async def fetch_user_profile(data: dict, res: dict = {"me": None, "data": None}):
         from database.models import AdminUser
+        from services.pos.accounts import accounts
 
-        res = read_stmt.read_stmt(AdminUser, query=data["id"])
-        if res:
-            return read_stmt.delete_unneeded_data(res)
-        return {"error": "Failed to get profiled data!!"}
+        res["me"] = read_stmt.read_stmt(AdminUser, query=data["id"])
+        if res["me"]:
+            res["data"] = await accounts.collect_data_to_process(data)
+            return res
+        return {"error": "Failed to fetch any data regarding to you..."}
 
     @staticmethod
     def check_k_matches_cache(cache: dict, key: str):

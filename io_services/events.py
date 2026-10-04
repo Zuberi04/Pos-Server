@@ -24,7 +24,7 @@ async def connect(sid, data):
     if not sid:
         raise ValueError("Error, no sid provided for connection!")
     print("Connected sid with value: ", sid)
-    await sio.emit(
+    return await sio.emit(
         "connected",
         {
             "message": "Connected successfully",
@@ -36,13 +36,12 @@ async def connect(sid, data):
 
 @sio.event
 async def disconnect(sid):
-    await sio.disconnect(sid)
+    return await sio.disconnect(sid)
 
 
 @sio.event
 async def authenticate(sid, data: dict):
     if not data:
-
         return await sio.emit("auth-error", await io.no_data_sent(), to=sid)
     res = await auth_validate.clean_credentials(data)
     res["ts"] = await io.timestamp()
@@ -78,7 +77,7 @@ async def query_db(sid, data: dict):
         return await sio.emit("query-error", await io.no_data_sent(), to=sid)
     auth = await auth_validate.validate_authentication(data["id"])
     if auth:
-        return await sio.emit("entry-error", auth, to=sio)
+        return await sio.emit("query-error", auth, to=sio)
     res = await q_fetch.collect_query(data)
     if res:
         res["ts"] = await io.timestamp()
@@ -126,28 +125,12 @@ async def file_entry(sid, data: dict):
 
 
 @sio.event
-async def me(sid, data: dict):
+async def accounts(sid, data: dict):
     auth = await auth_validate.validate_authentication(data["id"])
     if auth:
-        return await sio.emit("me-error", auth, to=sid)
-
-    res = q_fetch.fetch_user_profile(data)
-    if res:
-        return await sio.emit("me", {"me": res, "ts": await io.timestamp()}, to=sid)
-    return await io.generic_error(sid)
-
-
-@sio.event
-async def collect_analysis(sid, data: dict):
-    if not data:
-        return await io.generic_error(sid)
-    auth = await auth_validate.validate_authentication(data["id"])
-    if auth:
-        return await sio.emit("analysis-error", auth, to=sid)
-    res = await io.collect_db_analysis(data)
+        return await sio.emit("accounts-err", auth, to=sid)
+    res = await q_fetch.fetch_user_profile(data)
     if res:
         res["ts"] = await io.timestamp()
-        return await sio.emit(
-            "analysis" if not "error" in res else "anlys-error", res, to=sid
-        )
+        return await sio.emit("accounts", res, to=sid)
     return await io.generic_error(sid)

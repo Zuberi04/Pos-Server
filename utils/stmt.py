@@ -112,11 +112,12 @@ class ReadStatements:
 
             return self.delete_unneeded_data(self.read_stmt_to_dict(model))
 
-    @staticmethod
-    def delete_unneeded_data(data: dict, flag: set = {"otp", "password"}):
+    def delete_unneeded_data(self, data: dict, flag: set = {"otp", "password"}):
         for k in data.copy().keys():
             if k not in flag:
-                if isinstance(data[k], datetime.datetime):
+                if k.endswith("id"):
+                    data[k] = self.convert_id(data[k])
+                elif isinstance(data[k], datetime.datetime):
                     data[k] = data[k].isoformat()
             else:
                 data = {x: data[x] for x in data.keys() if x != k}

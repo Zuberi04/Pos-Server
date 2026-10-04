@@ -1,7 +1,6 @@
 import jwt
-import datetime
-from utils.extras import hash_jwt_key_for_user
-from utils.stmt import read_stmt
+
+from utils.extras import create_user_key
 
 
 class JwtTokens:
@@ -12,11 +11,11 @@ class JwtTokens:
         if len(creds) > 1:
             creds["token"] = jwt.encode(
                 payload={
-                    "id": read_stmt.convert_id(creds["id"]),
+                    "id": creds["id"],
                     "email": creds["email"],
                     "expiry": self.create_expiry_ts(creds).isoformat(),
                 },
-                key=hash_jwt_key_for_user(creds["id"]),
+                key=create_user_key(creds["id"], "jwt"),
                 algorithm="HS512",
             )
             if not creds["token"]:
@@ -32,30 +31,21 @@ class JwtTokens:
         try:
             jwt.decode(
                 creds["token"],
-                key=hash_jwt_key_for_user(creds["id"]),
+                key=create_user_key(creds["id"], "jwt"),
                 algorithms="HS512",
             )
             return True
-        except jwt.DecodeError:
-            from services.auth.otp import gen_otp
-            from database.models import AdminUser
-
-            return self.generate_token(
-                await gen_otp.check_if_validate_or_create(
-                    creds, read_stmt.read_stmt(AdminUser, creds["id"])
-                )
-            )
-
+        except jwt.DecodeError or jwt.ExpiredSignatureError:
+            return False
         except jwt.InvalidSignatureError:
             return {"error": "Invalid token presented!!"}
-        except jwt.ExpiredSignatureError as e:
-            return False
 
     @staticmethod
     def create_expiry_ts(creds: dict):
+        import datetime
+
         if not "token" in creds:
             return datetime.datetime.now() + datetime.timedelta(hours=24)
-
         return datetime.datetime.now() + datetime.timedelta(hours=(24 * 30))
 
 
