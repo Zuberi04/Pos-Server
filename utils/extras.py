@@ -81,12 +81,10 @@ def clean_str(data: str):
     return data.lower().strip()
 
 
-def clean_data(data: dict):
-    for k, v in data.copy().items():
-        data = {}
-        if isinstance(v, str):
-            data[clean_str(k)] = clean_str(v)
+def clean_data(data: dict, cleaned: dict = {}):
+    for k in data.keys():
+        if isinstance(data[k], str) and not k.startswith(("tok", "pass")):
+            cleaned[clean_str(k)] = clean_str(data[k])
         else:
-            data[clean_str(k)] = v
-    print("Cleaned data with values: \n", data)
-    return data
+            cleaned[clean_str(k)] = data[k]
+    return cleaned

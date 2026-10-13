@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from socketio import ASGIApp
 
-
 from io_services.events import sio
 from r_services.service import r_client
 
@@ -10,7 +9,7 @@ from utils.gen_pwd import genpwd
 # ============App intit================
 app = FastAPI()
 
-app.mount("/", ASGIApp(sio))
+app.mount("/", ASGIApp(sio, socketio_path="socket.io"))
 
 
 @app.on_event("startup")

@@ -19,18 +19,30 @@ class ValidateCreds:
     async def clean_credentials(self, creds: dict):
         from utils.extras import clean_data
 
+        print("Credentials received: \n", creds)
+
         creds = clean_data(creds)
-        for k in self.r_matches.keys():
-            if not k in creds or not self.r_matches[k].match(creds[k]):
-                return {
-                    "error": f"Missing or Invalid format for prop: {k.capitalize()}"
-                }
-        stmt = read_stmt.read_stmt(
-            AdminUser, query=creds["id" if "id" in creds else "email"]
-        )
-        if not stmt:
-            return await self.sign_up_user(creds)
-        return await self.validate_authentication(creds, stmt)
+        if len(creds) > 2:
+            for k in self.r_matches.keys():
+                if not k in creds or not self.r_matches[k].fullmatch(creds[k]):
+                    if not "token" in creds:
+                        if k in creds:
+                            if self.r_matches[k].match(creds[k]):
+                                continue
+                        return {
+                            "error": f"Missing or Invalid format for {k.capitalize()}"
+                        }
+                    break
+        try:
+            if creds["fullnames"]:
+                return await self.sign_up_user(creds)
+        except KeyError:
+            stmt = read_stmt.read_stmt(
+                AdminUser, query=creds["id" if "id" in creds else "email"]
+            )
+            if not stmt:
+                return {"error": "Invalid credentials passed"}
+            return await self.validate_authentication(creds, stmt)
 
     async def validate_authentication(self, creds: dict | str, stmt: dict = None):
         if not stmt and isinstance(creds, str):

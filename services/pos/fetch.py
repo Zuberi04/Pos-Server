@@ -11,6 +11,8 @@ class FetchQueryData:
         self.models = MODELS
 
     async def fetch_data(self, data: dict):
+        if "collect" in data:
+            return self.collect_data_keys(data)
         res = await r_service.collect_cache(data["id"], data["name"])
         if res:
             res = decode_json_objects(res)
@@ -34,22 +36,25 @@ class FetchQueryData:
                 return await self.find_n_model_data(
                     data, model, relshp.check_if_model_contains_relations(model)[0]
                 )
-
         return {"error": "Invalid query to table!!"}
 
     async def find_n_model_data(
         self, data: dict, model: Any, p_tn: str, n_find: list = []
     ):
-        cached = await r_service.collect_cache(data["id"], "inventory")
+        from database.models import Inventory
+
+        cached = await r_service.collect_cache(
+            data["id"], clean_str(Inventory.__name__)
+        )
         if cached:
             cached = decode_json_objects(cached)
         else:
-            from database.models import Inventory
-
             cached = read_stmt.read_stmt(Inventory, data["id"])
 
         if not cached:
             return {"error": "No data exist in rel to you!!"}
+        elif "data" in cached:
+            cached = cached["data"]
         elif not isinstance(cached, list):
             cached = [cached]
 
@@ -72,8 +77,8 @@ class FetchQueryData:
                     n_find.append(model)
                     break
         n_find.insert(0, model)
-        i = len(n_find) - 1
-        while i:
+        i = -1
+        while len(n_find) + i >= 0:
             cached = find_next_data(cached, n_find[i])
             if not cached:
                 raise ValueError("Failed to find n data!!")
@@ -106,7 +111,7 @@ class FetchQueryData:
                 {creds["name"]: {"data": records, "size": model().table_size()}},
                 3600,
             )
-        return {data["name"]: records}
+        return {creds["name"]: records}
 
     async def collect_query(self, data: dict):
         from utils.extras import clean_data
@@ -155,6 +160,24 @@ class FetchQueryData:
         if not key in cache:
             return False
         return True
+
+    def collect_data_keys(self, data: dict):
+        types = {int: 0, str: "", float: 0.0}
+        print("Data for col collection: \n", data)
+        for m in self.models:
+            if clean_str(m.__name__).find(clean_str(data["collect"])) != -1:
+                return {
+                    "collected": [
+                        {
+                            col.key: types[k]
+                            for k in types.keys()
+                            if col.type.python_type == k
+                        }
+                        for col in m.__table__.c
+                        if not col.key.endswith(("id", "ed"))
+                    ]
+                }
+        return {"error": "could not find suggested data entry!!"}
 
 
 q_fetch = FetchQueryData()

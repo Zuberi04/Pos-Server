@@ -7,11 +7,9 @@ from services.pos.entries.entries import entries
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    # client_manager=socketio.AsyncRedisManager("redis://localhost:6379"),
     cors_allowed_origins="*",
     transports=["websocket", "polling"],
     async_handlers=True,
-    # engineio_logger=True,
 )
 
 
@@ -41,14 +39,15 @@ async def disconnect(sid):
 
 @sio.event
 async def authenticate(sid, data: dict):
+
     if not data:
         return await sio.emit("auth-error", await io.no_data_sent(), to=sid)
     res = await auth_validate.clean_credentials(data)
     res["ts"] = await io.timestamp()
-    if "error" in res:
-        return await sio.emit("auth-error", res, to=sid)
-
-    return await sio.emit("authenticated", res, to=sid)
+    print("Res: ", res)
+    return await sio.emit(
+        "auth-error" if "error" in res else "authenticated", res, to=sid
+    )
 
 
 @sio.event
