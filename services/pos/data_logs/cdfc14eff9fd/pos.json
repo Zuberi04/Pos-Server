@@ -1,0 +1,102 @@
+[
+    {
+        "id": 1,
+        "name": "Espresso",
+        "sku": "BEV-001",
+        "barcode": "742130985011",
+        "category": "Beverages",
+        "price": 3.50,
+        "stock": 150,
+        "min_stock": 20
+    },
+    {
+        "id": 2,
+        "name": "Iced Latte",
+        "sku": "BEV-002",
+        "barcode": "742130985028",
+        "category": "Beverages",
+        "price": 4.50,
+        "stock": 95,
+        "min_stock": 15
+    },
+    {
+        "id": 3,
+        "name": "Croissant",
+        "sku": "BAK-001",
+        "barcode": "742130985035",
+        "category": "Bakery",
+        "price": 2.75,
+        "stock": 40,
+        "min_stock": 10
+    },
+    {
+        "id": 4,
+        "name": "Blueberry Muffin",
+        "sku": "BAK-002",
+        "barcode": "742130985042",
+        "category": "Bakery",
+        "price": 3.00,
+        "stock": 12,
+        "min_stock": 10
+    },
+    {
+        "id": 5,
+        "name": "Avocado Toast",
+        "sku": "KST-001",
+        "barcode": "742130985059",
+        "category": "Kitchen",
+        "price": 8.50,
+        "stock": 60,
+        "min_stock": 5
+    },
+    {
+        "id": 6,
+        "name": "Club Sandwich",
+        "sku": "KST-002",
+        "barcode": "742130985066",
+        "category": "Kitchen",
+        "price": 9.25,
+        "stock": 35,
+        "min_stock": 8
+    },
+    {
+        "id": 7,
+        "name": "Mineral Water",
+        "sku": "BEV-003",
+        "barcode": "742130985073",
+        "category": "Beverages",
+        "price": 1.50,
+        "stock": 300,
+        "min_stock": 50
+    },
+    {
+        "id": 8,
+        "name": "Chocolate Chip Cookie",
+        "sku": "BAK-003",
+        "barcode": "742130985080",
+        "category": "Bakery",
+        "price": 2.00,
+        "stock": 85,
+        "min_stock": 15
+    },
+    {
+        "id": 9,
+        "name": "Caesar Salad",
+        "sku": "KST-003",
+        "barcode": "742130985097",
+        "category": "Kitchen",
+        "price": 7.95,
+        "stock": 22,
+        "min_stock": 5
+    },
+    {
+        "id": 10,
+        "name": "Earl Grey Tea",
+        "sku": "BEV-004",
+        "barcode": "742130985103",
+        "category": "Beverages",
+        "price": 2.50,
+        "stock": 110,
+        "min_stock": 20
+    }
+]
