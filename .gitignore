@@ -1,6 +1,6 @@
 # Python
 __pycache__/
-__pycache__/*
+
 *.py[cod]
 *$py.class
 
@@ -12,7 +12,7 @@ env/
 #Env variables
 .env
 .env.*
-env
+!.env.*
 
 #IDE
 .vscode/
