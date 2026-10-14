@@ -20,45 +20,35 @@ class ValidateCreds:
         from utils.extras import clean_data
 
         print("Credentials received: \n", creds)
-
         creds = clean_data(creds)
-        if len(creds) > 2:
+        if not "token" in creds:
             for k in self.r_matches.keys():
                 if not k in creds or not self.r_matches[k].fullmatch(creds[k]):
-                    if not "token" in creds:
-                        if k in creds:
-                            if self.r_matches[k].match(creds[k]):
-                                continue
-                        return {
-                            "error": f"Missing or Invalid format for {k.capitalize()}"
-                        }
-                    break
-        try:
-            if creds["fullnames"]:
+                    if k in creds:
+                        if self.r_matches[k].match(creds[k]):
+                            continue
+                    return {"error": f"Missing or Invalid format for {k.capitalize()}"}
+            if "fullnames" in creds:
                 return await self.sign_up_user(creds)
-        except KeyError:
-            stmt = read_stmt.read_stmt(
-                AdminUser, query=creds["id" if "id" in creds else "email"]
-            )
-            if not stmt:
-                return {"error": "Invalid credentials passed"}
-            return await self.validate_authentication(creds, stmt)
+
+        return await self.validate_authentication(creds)
 
     async def validate_authentication(self, creds: dict | str, stmt: dict = None):
-        if not stmt and isinstance(creds, str):
+        if not stmt:
             stmt = read_stmt.read_stmt(AdminUser, creds)
             if not stmt or not "otp" in stmt:
                 return {"error": "Invalid user accessing system features!!"}
-            return None
+            elif isinstance(creds, str):
+                return None
         elif not "token" in creds:
             return await self.validate_otp(creds, stmt)
         elif "password" in creds and not self.hash_or_compare(
             creds["password"], stmt["password"]
         ):
-            if not "reset" in creds:
+            if not "reset" or "token" in creds:
                 return {"error": "Invalid user credentials passed!!"}
             creds["password"] = self.hash_or_compare(creds["password"])
-            return await self.validate_otp(creds.stmt)
+            return await self.validate_otp(creds, stmt)
         token = await auth_token.validate_token(creds)
         if not isinstance(token, bool):
             return token
@@ -94,7 +84,7 @@ class ValidateCreds:
         if db_pass:
             return checkpw(password.encode("utf-8", errors="replace"), db_pass)
         return hashpw(
-            password.encode("utf-8", errors="replace"), salt=gensalt(rounds=10)
+            password.encode("utf-8", errors="replace"), salt=gensalt(rounds=12)
         )
 
 
