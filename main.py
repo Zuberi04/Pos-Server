@@ -35,8 +35,5 @@ def initialize_db():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with create_db() as db:
-        print("DB Info: \n", db.info)
         db.close()
-        print("Closed db successfully!!")
-
-    return print("Db dropped and performed redis reset!!")
+    return print("Db dropped && intialized and performed redis reset!!")
