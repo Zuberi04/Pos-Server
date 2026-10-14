@@ -4,7 +4,7 @@ from sqlite3 import DatabaseError
 from contextlib import contextmanager
 
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import URL, create_engine
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +26,14 @@ if not db_pass:
 
 try:
     engine = create_engine(
-        f"postgres://{db_user}:{db_pass}@postgres:5432/{db_path}", echo=True
+        URL.create(
+            "postgresql+psycopg2",
+            username=db_user,
+            password=db_pass,
+            host=getenv("DB_HOST", "postgres"),
+            database=db_path,
+        ),
+        echo=getenv("SQL_ECHO", "false").lower() == "true",
     )
     print("Generated Postgres DB..!!")
 except Exception:
