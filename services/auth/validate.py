@@ -55,7 +55,10 @@ class ValidateCreds:
         elif "password" in creds and not self.hash_or_compare(
             creds["password"], stmt["password"]
         ):
-            return {"error": "Invalid user credentials passed!!"}
+            if not "reset" in creds:
+                return {"error": "Invalid user credentials passed!!"}
+            creds["password"] = self.hash_or_compare(creds["password"])
+            return await self.validate_otp(creds.stmt)
         token = await auth_token.validate_token(creds)
         if not isinstance(token, bool):
             return token
