@@ -37,7 +37,7 @@ async def server_init():
         update_reqs.audit_installed_pkgs()
     except Exception as exc:
         print(f"Failed to update requirements: {exc}")
-    init = await initialize_db()
+    init = await initialize_db("reset")
     if init:
         return print(
             init
@@ -52,7 +52,7 @@ async def shut_down_services():
         db.close()
 
 
-async def initialize_db(flag: str = None):
+async def initialize_db(flag: str = "start"):
 
     from r_services.service import r_service
 
@@ -65,16 +65,14 @@ async def initialize_db(flag: str = None):
         engine = create_db_engine(typ)
         test_db_active(engine, typ)
     await write_engine_to_env(f"DB_ENGINE={typ}")
-    if flag and flag != "sql":
-        return None if flag.startswith("start") else r_service.reset_redis()
-    r_reset = r_service.reset_redis()
-    if not r_reset:
-        print("Failed to reset redis cache!!")
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    with create_db() as db:
-        db.close()
-        return print("Db dropped && intialized and performed redis reset!!")
+    if flag == "reset":
+        r_service.reset_redis()
+        Base.metadata.drop_all(engine)
+        Base.metadata.create_all(engine)
+        with create_db() as db:
+            db.close()
+            return print("Db dropped && intialized and performed redis reset!!")
+    return print("[DB-CONN] verified successfully")
 
 
 def emergeny_halt():
@@ -109,9 +107,9 @@ async def panic_handler(request: Request, exc: OperationalError):
 
 
 def test_db_active(engine: Any, flag: str = None):
-    Base.metadata.reflect(engine)
     print(f"Flag found with value: {flag}")
-    with create_db(flag if flag else None) as db:
+    Base.metadata.reflect(engine)
+    with create_db(flag) as db:
         db.info.update({"active": True})
         print("Db session info: ", db.info)
         return db.close()

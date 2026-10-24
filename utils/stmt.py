@@ -27,22 +27,14 @@ class ReadStatements:
                             select(model).where(
                                 col.type.python_type == type(query) and col == query
                                 if col.key.find("id") == -1
-                                else (
-                                    col == query
-                                    if isinstance(query, str)
-                                    else col == await self.convert_id(query)
-                                )
+                                else (col == await self.convert_id(query))
                             )
                         ).first()
                     stmts = db.scalars(
                         select(model).where(
                             col.type.python_type == type(query) and col == query
                             if col.key.find("id") == -1
-                            else (
-                                col == query
-                                if isinstance(query, str)
-                                else col == await self.convert_id(query)
-                            )
+                            else (col == await self.convert_id(query))
                         )
                     ).all()
                     if stmts:

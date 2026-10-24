@@ -114,7 +114,7 @@ async def file_entry(sid, data: dict):
     if not data:
         return await sio.emit("file-error", await io.no_data_sent(), to=sid)
 
-    auth = await auth_validate.validate_authentication(data[0]["id"])
+    auth = await auth_validate.validate_authentication(data["id"])
     if isinstance(auth, dict):
         return await sio.emit("file-error", auth, to=sid)
     res = await entries.collect_file(data)

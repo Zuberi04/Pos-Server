@@ -28,40 +28,36 @@ class ValidateCreds:
                         return {
                             "error": f"Missing or Invalid format for {k.capitalize()}"
                         }
-            if "fullnames" in creds:
+            if "fullnames" and not "reset" in creds:
                 return await self.sign_up_user(creds)
         return await self.validate_authentication(creds)
 
-    async def validate_authentication(self, creds: dict | str, stmt: dict = None):
-        print("Validating creds!!")
+    async def validate_authentication(self, creds: dict | str):
+        stmt = await read_stmt.read_stmt(
+            AdminUser,
+            (
+                creds["id" if "id" in creds else "email"]
+                if isinstance(creds, dict)
+                else creds
+            ),
+        )
         if not stmt:
-            stmt = await read_stmt.read_stmt(
-                AdminUser,
-                (
-                    creds["id" if "id" in creds else "email"]
-                    if isinstance(creds, dict)
-                    else creds
-                ),
-            )
-            if not stmt or not "otp" in stmt:
-                return {"error": "Invalid user accessing system features!!"}
-            elif isinstance(creds, str):
-                return None
-        elif not "token" in creds:
-            return await self.validate_otp(creds, stmt)
+            return {"error": "Invalid user accessing system!!"}
+        elif isinstance(creds, str):
+            return None
         elif "password" in creds and not self.hash_or_compare(
             creds["password"], stmt["password"]
         ):
-            if not "reset" or "token" in creds:
+            if not "reset" in creds:
                 return {"error": "Invalid user credentials passed!!"}
             creds["password"] = self.hash_or_compare(creds["password"])
+            return await self.validate_otp(creds, stmt)
+        elif not "token" in creds:
             return await self.validate_otp(creds, stmt)
         token = await auth_token.validate_token(creds)
         if not isinstance(token, bool):
             return token
-        elif not token:
-            return await self.validate_otp(creds, stmt)
-        return creds
+        return await self.validate_otp(creds, stmt) if not token else creds
 
     @staticmethod
     async def validate_otp(creds: dict, stmt: dict):
@@ -77,15 +73,14 @@ class ValidateCreds:
     async def sign_up_user(self, creds: dict):
         from r_services.service import r_service
 
-        stmt = await read_stmt.read_stmt(AdminUser, creds["email"])
-        if stmt:
-            return await self.validate_authentication(creds, stmt)
         creds["password"] = self.hash_or_compare(creds["password"])
-        hash, used = await gen_otp.check_if_validate_or_create(creds)
-        creds["otp"] = hash
-        wrote = await read_stmt.write_items_to_db(AdminUser, creds)
-        r_service.cache_data(wrote["id"], {"used": used})
-        return auth_token.generate_token(wrote)
+        hash = await gen_otp.check_if_validate_or_create(creds)
+        if isinstance(hash, tuple):
+            creds["otp"] = hash[0]
+            wrote = await read_stmt.write_items_to_db(AdminUser, creds)
+            r_service.cache_data(wrote["id"], {"used": hash[1]})
+            return auth_token.generate_token(wrote)
+        raise ValueError(f"Malformed value received from otp: {hash}")
 
     @staticmethod
     def hash_or_compare(password: str, db_pass: bytes = None):
