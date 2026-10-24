@@ -3,6 +3,7 @@ from pathlib import Path
 
 from hashlib import shake_256
 from random import choice
+from subprocess import CalledProcessError
 
 from dotenv import load_dotenv
 from r_services.service import r_service
@@ -23,8 +24,13 @@ class GenPassword:
             return print("Env file not found skipping password rotate!!")
         exp = await r_service.collect_cache(self.pwd_key)
         if exp:
-            return print("Expiry not met for alter pass!!")
-
+            with env.open("r") as r:
+                data = [x.replace("\n", "") for x in r.readlines()]
+                print(f"Found data in env with value:\n {data}")
+                if not data:
+                    raise ValueError("Error no data in env!!")
+                elif len([d.split("=")[0].find("PASSWORD") != -1 for d in data]) > 0:
+                    return print("Expiry not met for alter pass!!")
         prev: list[str] = []
         with env.open("r") as r:
             data = r.readlines()
@@ -63,7 +69,35 @@ class GenPassword:
                     self.chars.append(use)
                 self._create_password(p[0], l)
             r_service.cache_data(self.pwd_key, {"pos_db": "postgres"}, 3600 * 24 * 14)
-            return print("Rotated pwd for Redis && Postgres db!!")
+
+            # return self._restart_system()
+
+    def _restart_system(self, sudo: str = "sudo"):
+        print("Rotated pwd for Redis && Postgres db. Restarting Docker!!")
+        from subprocess import run
+
+        try:
+            pwd = getenv("POSTGRES_PASSWORD", "")
+            if not pwd or pwd == "":
+                raise ValueError("Failed to get password!!")
+            elif sudo:
+                run(
+                    f'{sudo} docker compose exec db psql -U {getenv('POSTGRES_USER', 'archies_pos')} -d prod -c "ALTER USER user WITH PASSWORD {pwd}"',
+                    shell=True,
+                ).check_returncode()
+                return run(
+                    [f"{sudo}", "docker", "compose", "up", "--build"]
+                ).check_returncode()
+            else:
+                run(
+                    f'docker compose exec db psql -U {getenv('POSTGRES_USER', 'archies_pos')} -d prod -c "ALTER USER user WITH PASSWORD {pwd}"',
+                    shell=True,
+                ).check_returncode()
+                return run(
+                    ["docker", "compose", "up", "-d", "--recreate-deps"]
+                ).check_returncode()
+        except CalledProcessError:
+            return self._restart_system()
 
     def _create_password(self, key: str, l: int):
         pwd = ""

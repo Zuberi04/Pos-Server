@@ -141,7 +141,7 @@ class ProcessFile:
         cursor = conn.cursor()
         procs = []
         for row in cursor.fetchall():
-            procs.append(read_stmt.read_stmt_to_dict(row))
+            procs.append(await read_stmt.read_stmt_to_dict(row))
 
         return await self.process_entries(procs, data["id"])
 
@@ -226,7 +226,7 @@ class ProcessFile:
     async def process_record_find_entry(self, record: dict, flag: str):
         from utils.rel import relshp
 
-        infer, norm = self.find_model(record, flag)
+        infer, norm = await self.find_model(record, flag)
         wrote = await relshp.check_if_rel_is_needed(
             self.fill_missing_v_in_n(infer["k"], record, norm), infer["m"]
         )
@@ -242,7 +242,7 @@ class ProcessFile:
         norm = {k: v for k, v in norm.items() if k != dep[1]}
         for rec in dep:
             rec.update(wrote)
-            infer, norm = self.find_model(rec)
+            infer, norm = await self.find_model(rec)
             norm = self.fill_missing_v_in_n(infer["k"], record, norm)
             w = await relshp.check_if_rel_is_needed(norm, infer["m"])
             if not "proc_deps" in wrote:
@@ -284,10 +284,10 @@ class ProcessFile:
         return None
 
     @staticmethod
-    def find_model(record: dict, key: str = None):
+    async def find_model(record: dict, key: str = None):
         from utils.find_fit import find_fit_model
 
-        result = find_fit_model.find_fit_via_filename(record, key)
+        result = await find_fit_model.find_fit_via_filename(record, key)
         if not result:
             raise ValueError(
                 "Failed to find model based on record with vals:\n", record, key

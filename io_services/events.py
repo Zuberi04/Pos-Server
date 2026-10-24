@@ -59,6 +59,9 @@ async def fetch_data(sid, data: dict):
         return await sio.emit("fetch-err", auth, to=sid)
     res = await q_fetch.fetch_data(data)
     if res:
+        if "columns" in res or "query" in res:
+            res["ts"] = await io.timestamp()
+            return sio.emit("fetched", res, to=sid)
         return await sio.emit(
             "fetched",
             {

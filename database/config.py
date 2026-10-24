@@ -1,55 +1,72 @@
 from os import getenv
-from pathlib import Path
-from sqlite3 import DatabaseError
-from contextlib import contextmanager
-
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import URL, create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import URL, Engine, create_engine
 from dotenv import load_dotenv
+from functools import lru_cache
 
 load_dotenv()
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_DIR = BASE_DIR / "pos_data"
+def collect_db_creds(creds: dict = {}):
+    from utils.extras import clean_str, db_keys
 
-DB_DIR.mkdir(parents=True, exist_ok=True)
+    for k in db_keys:
+        if k:
+            creds[clean_str(k.split("_")[1])] = getenv(k, "")
+    url = URL.create(
+        "postgresql+psycopg2",
+        username=creds["user"],
+        password=creds["password"],
+        host=creds["host"],
+        database=creds["url"],
+    )
+    return url
 
-db_path = getenv("DB_URL", "pos.db")
-db_user = getenv("POSTGRES_USER", "pos")
-db_pass = getenv("POSTGRES_PASSWORD", getenv("BACKUP_PWD", ""))
 
-if not db_pass:
-    raise ValueError(
-        f"Error: failed to get config db_pass from env file with val: {db_pass}!!"
+@lru_cache(maxsize=2)
+def create_db_engine(typ: str) -> Engine:
+    echo = getenv("SQL_ECHO", "false").lower() == "true"
+    if typ != "postgres":
+        print("Creating backup sqlalchemy engine!!")
+        if typ not in ("sql", "sqlite"):
+            raise ValueError(f"Unsupporrted type {typ} of db engine")
+        from pathlib import Path
+
+        DB_DIR = Path(__file__).resolve().parent.parent / "pos_data"
+        DB_DIR.mkdir(parents=True, exist_ok=True)
+        DB_FILE = DB_DIR / getenv("DB_URL", "pos.db")
+        return create_engine(
+            f"sqlite:///{DB_FILE}",
+            echo=echo,
+            connect_args={"timeout": 30},
+        )
+    return create_engine(
+        collect_db_creds(),
+        echo=echo,
+        pool_size=20,
+        max_overflow=10,
+        pool_recycle=1800,
+        pool_pre_ping=True,
     )
 
-try:
-    engine = create_engine(
-        URL.create(
-            "postgresql+psycopg2",
-            username=db_user,
-            password=db_pass,
-            host=getenv("DB_HOST", "postgres"),
-            database=db_path,
-        ),
-        echo=getenv("SQL_ECHO", "false").lower() == "true",
+
+from contextlib import contextmanager
+
+
+@lru_cache(maxsize=2)
+def create_session(typ: str = "postgres"):
+    return sessionmaker(
+        bind=create_db_engine(typ), autoflush=True, expire_on_commit=False
     )
-    print("Generated Postgres DB..!!")
-except Exception:
-    DB_FILE = DB_DIR / db_path
-    engine = create_engine(f"sqlite:///{DB_FILE}", echo=True)
-
-
-Session = sessionmaker(engine, autoflush=True, expire_on_commit=True)
 
 
 @contextmanager
-def create_db():
-    db = Session()
+def create_db(flag: str = None):
+    db: Session = create_session(flag if flag else getenv("DB_ENGINE", "postgres"))()
     try:
         yield db
-    except DatabaseError as e:
-        raise ValueError(f"Error: Generating db with err-value: \n\t {e}") from e
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

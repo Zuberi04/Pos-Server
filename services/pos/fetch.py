@@ -30,8 +30,8 @@ class FetchQueryData:
                 if not "id" in data:
                     return {"error": "No key to access data!!"}
                 elif data["name"].startswith(("inv", "oper")):
-                    return self.clean_data_for_response(
-                        read_stmt.read_stmt(model, data["id"]), data, model
+                    return await self.clean_data_for_response(
+                        await read_stmt.read_stmt(model, data["id"]), data, model
                     )
                 return await self.find_n_model_data(
                     data, model, relshp.check_if_model_contains_relations(model)[0]
@@ -49,7 +49,7 @@ class FetchQueryData:
         if cached:
             cached = decode_json_objects(cached)
         else:
-            cached = read_stmt.read_stmt(Inventory, data["id"])
+            cached = await read_stmt.read_stmt(Inventory, data["id"])
 
         if not cached:
             return {"error": "No data exist in rel to you!!"}
@@ -58,9 +58,9 @@ class FetchQueryData:
         elif not isinstance(cached, list):
             cached = [cached]
 
-        def find_next_data(cached: list, m: Any, result: list = []):
+        async def find_next_data(cached: list, m: Any, result: list = []):
             for c in cached:
-                r = read_stmt.read_stmt(m, c["id"])
+                r = await read_stmt.read_stmt(m, c["id"])
                 if r:
                     if not isinstance(r, list):
                         result.append(r)
@@ -79,12 +79,12 @@ class FetchQueryData:
         n_find.insert(0, model)
         i = -1
         while len(n_find) + i >= 0:
-            cached = find_next_data(cached, n_find[i])
+            cached = await find_next_data(cached, n_find[i])
             if not cached:
                 raise ValueError("Failed to find n data!!")
             i -= 1
 
-        return self.clean_data_for_response(cached, data, model)
+        return await self.clean_data_for_response(cached, data, model)
 
     def check_if_db_size_updated(self, data: dict, size: int):
         for model in self.models:
@@ -94,7 +94,7 @@ class FetchQueryData:
                 return False
         return None
 
-    def clean_data_for_response(
+    async def clean_data_for_response(
         self, data: list | dict, creds: dict, model: Any = None, records: list = []
     ):
         if not data:
@@ -102,7 +102,7 @@ class FetchQueryData:
         elif not isinstance(data, list):
             data = [data]
         for record in data:
-            records.append(read_stmt.delete_unneeded_data(record))
+            records.append(await read_stmt.delete_unneeded_data(record))
         if not model:
             r_service.cache_data(creds["id"], {creds["name"] + creds["q"]: records})
         else:
@@ -123,15 +123,15 @@ class FetchQueryData:
         for model in self.models:
             if model.__name__.lower().strip() != data["name"]:
                 continue
-            res = read_stmt.read_stmt(model, query=data["q"])
+            res = await read_stmt.read_stmt(model, query=data["q"])
             if not res:
                 return {"error": f"No data exist in db for query {data['q']}"}
             elif "relshp" in data:
-                return self.collect_nxt_data_in_query(data, res)
-            return self.clean_data_for_response(res, data)
+                return await self.collect_nxt_data_in_query(data, res)
+            return await self.clean_data_for_response(res, data)
         return {"error": f"No data exist in db for query sent"}
 
-    def collect_nxt_data_in_query(self, data: dict, res: dict | list):
+    async def collect_nxt_data_in_query(self, data: dict, res: dict | list):
         if not isinstance(res, list):
             res = [res]
         for model in self.models:
@@ -139,17 +139,17 @@ class FetchQueryData:
             if data["relshp"] in names:
                 records = []
                 for r in res:
-                    r[data["relshp"]] = read_stmt.read_stmt(model, r["id"])
+                    r[data["relshp"]] = await read_stmt.read_stmt(model, r["id"])
                     records.append(r)
-                return self.clean_data_for_response(records, data)
-        return self.clean_data_for_response(res, data)
+                return await self.clean_data_for_response(records, data)
+        return await self.clean_data_for_response(res, data)
 
     @staticmethod
     async def fetch_user_profile(data: dict, res: dict = {"me": None, "data": None}):
         from database.models import AdminUser
         from services.pos.accounts import accounts
 
-        res["me"] = read_stmt.read_stmt(AdminUser, query=data["id"])
+        res["me"] = await read_stmt.read_stmt(AdminUser, query=data["id"])
         if res["me"]:
             res["data"] = await accounts.collect_data_to_process(data)
             return res
@@ -167,7 +167,7 @@ class FetchQueryData:
         for m in self.models:
             if clean_str(m.__name__).find(clean_str(data["collect"])) != -1:
                 return {
-                    "collected": [
+                    "columns": [
                         {
                             col.key: types[k]
                             for k in types.keys()

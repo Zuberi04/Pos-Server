@@ -29,28 +29,28 @@ class FindFitToModel:
                 return False
         return True
 
-    def find_fit_via_filename(self, record: dict, name: str = None):
+    async def find_fit_via_filename(self, record: dict, name: str = None):
         if not name:
-            return self.find_similarity_in_columns(record)
+            return await self.find_similarity_in_columns(record)
         for model in self.models:
             names = [clean_str(model.__name__), clean_str(model.__tablename__)]
             for n in names:
                 if self.check_if_strings_compare(name, n):
-                    return self.find_similarity_in_columns(
+                    return await self.find_similarity_in_columns(
                         record, model, model.__name__
                     )
-        return self.find_similarity_in_columns(record)
+        return await self.find_similarity_in_columns(record)
 
-    def find_fit_in_model_table_values(self, record: dict, infer: dict):
+    async def find_fit_in_model_table_values(self, record: dict, infer: dict):
         if not "k" or not "m" in infer:
-            return self.find_similarity_in_columns(record)
+            return await self.find_similarity_in_columns(record)
 
         from utils.stmt import read_stmt
 
         print("Model to infer: \n", infer)
-        data = read_stmt.read_stmt(infer["m"])
+        data = await read_stmt.read_stmt(infer["m"])
         if not data:
-            return self.normalize_attr(infer, record)
+            return await self.normalize_attr(infer, record)
         elif not isinstance(data, list):
             data = [data]
         i = 0
@@ -80,10 +80,10 @@ class FindFitToModel:
                     elif self.flag and k not in self.flag:
                         i -= 1 / infer["v"]
         if i + infer["v"] < infer["v"] * 0.75:
-            return self.find_similarity_in_columns(record, infer["m"])
-        return self.normalize_attr(infer, record)
+            return await self.find_similarity_in_columns(record, infer["m"])
+        return await self.normalize_attr(infer, record)
 
-    def find_similarity_in_columns(
+    async def find_similarity_in_columns(
         self, record: dict, mod: Any = None, flag: str = None, result: list = []
     ):
         for model in self.models:
@@ -120,9 +120,9 @@ class FindFitToModel:
             self.flag = relshp.check_if_model_contains_relations(mod)
             result = [r for r in result if r["m"] != mod]
         print(f"Length of result after flag check: {len(result)}")
-        return self.find_greatest_potential_of_exist(result, record, mod)
+        return await self.find_greatest_potential_of_exist(result, record, mod)
 
-    def find_greatest_potential_of_exist(
+    async def find_greatest_potential_of_exist(
         self,
         result: list,
         record: dict,
@@ -163,14 +163,16 @@ class FindFitToModel:
                         infer = r
 
         if len(infer["k"]) <= len(result) * 0.5:
-            return self.find_greatest_potential_of_exist(result, record, infer["m"])
-        return self.find_fit_in_model_table_values(record, infer)
+            return await self.find_greatest_potential_of_exist(
+                result, record, infer["m"]
+            )
+        return await self.find_fit_in_model_table_values(record, infer)
 
-    def normalize_attr(self, infer: dict, record: dict):
+    async def normalize_attr(self, infer: dict, record: dict):
         if not infer or not record:
             raise ValueError("Params missing for data normalization!!")
         elif not infer["k"] or not infer["m"]:
-            return self.find_similarity_in_columns(record)
+            return await self.find_similarity_in_columns(record)
         norm = {}
         for k in infer["k"]:
             for x in k.keys():

@@ -50,21 +50,13 @@ def _replacer(match):
 
 
 def decode_json_objects(data: str):
-    """
-    Safely parses incoming data strings that may accidentally contain raw
-    Python datetime string representations.
-    """
     if not isinstance(data, str):
         return data
 
     from json import loads, JSONDecodeError
     from ast import literal_eval
 
-    # 1. Clean the string by replacing datetime.datetime(...) with standard string stamps
     cleaned_data = DATETIME_REGEX.sub(_replacer, data)
-
-    # 2. Standardize single quotes to double quotes if it looks like a Python dict string
-    # (ast.literal_eval can handle single quotes, but JSON requires double quotes)
     try:
         return loads(cleaned_data)
     except JSONDecodeError:
@@ -88,3 +80,25 @@ def clean_data(data: dict, cleaned: dict = {}):
         else:
             cleaned[clean_str(k)] = data[k]
     return cleaned
+
+
+db_keys = {"POSTGRES_USER", "POSTGRES_PASSWORD", "DB_HOST", "DB_URL"}
+
+
+from functools import wraps, partial
+from asyncio import get_running_loop
+from inspect import iscoroutinefunction
+from typing import Callable, Any
+
+
+def run_in_thread_pool(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator that converts sync funcs to async funcs to avoid blocking"""
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any):
+        if iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        loop = get_running_loop()
+        return await loop.run_in_executor(None, partial(func, *args, **kwargs))
+
+    return wrapper

@@ -23,19 +23,26 @@ class ValidateCreds:
         creds = clean_data(creds)
         if not "token" in creds:
             for k in self.r_matches.keys():
-                if not k in creds or not self.r_matches[k].fullmatch(creds[k]):
-                    if k in creds:
-                        if self.r_matches[k].match(creds[k]):
-                            continue
-                    return {"error": f"Missing or Invalid format for {k.capitalize()}"}
+                if not self.r_matches[k].fullmatch(creds[k]):
+                    if not self.r_matches[k].match(creds[k]):
+                        return {
+                            "error": f"Missing or Invalid format for {k.capitalize()}"
+                        }
             if "fullnames" in creds:
                 return await self.sign_up_user(creds)
-
         return await self.validate_authentication(creds)
 
     async def validate_authentication(self, creds: dict | str, stmt: dict = None):
+        print("Validating creds!!")
         if not stmt:
-            stmt = read_stmt.read_stmt(AdminUser, creds)
+            stmt = await read_stmt.read_stmt(
+                AdminUser,
+                (
+                    creds["id" if "id" in creds else "email"]
+                    if isinstance(creds, dict)
+                    else creds
+                ),
+            )
             if not stmt or not "otp" in stmt:
                 return {"error": "Invalid user accessing system features!!"}
             elif isinstance(creds, str):
@@ -63,17 +70,20 @@ class ValidateCreds:
             return creds["otp"]
         return auth_token.generate_token(
             await read_stmt.update_db_entries(
-                read_stmt.read_stmt(AdminUser, stmt["id"], "upd"), creds
+                await read_stmt.read_stmt(AdminUser, stmt["id"], "upd"), creds
             )
         )
 
     async def sign_up_user(self, creds: dict):
         from r_services.service import r_service
 
+        stmt = await read_stmt.read_stmt(AdminUser, creds["email"])
+        if stmt:
+            return await self.validate_authentication(creds, stmt)
         creds["password"] = self.hash_or_compare(creds["password"])
         hash, used = await gen_otp.check_if_validate_or_create(creds)
         creds["otp"] = hash
-        wrote = read_stmt.write_items_to_db(AdminUser, creds)
+        wrote = await read_stmt.write_items_to_db(AdminUser, creds)
         r_service.cache_data(wrote["id"], {"used": used})
         return auth_token.generate_token(wrote)
 
