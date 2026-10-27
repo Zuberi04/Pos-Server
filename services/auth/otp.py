@@ -22,6 +22,7 @@ class OtpGeneration:
             elif "token" in creds:
                 creds["upd"] = True
             return self.create_otp(creds, used)
+        print(f"Creating new otp for user with email: {creds['email']} ")
         return self.create_otp(creds)
 
     def create_otp(self, creds: dict, used: list = None, mx=6 * 2 + 1):
@@ -38,13 +39,12 @@ class OtpGeneration:
                             otp.append(c)
                         elif c not in otp:
                             otp.insert(used.count(c) - used.index(c), c)
-        if "id" in creds:
+        try:
             r_service.cache_data(creds["id"], {"used": otp})
-        return (
-            (self.create_otp_hash(otp), otp)
-            if not "id" in creds
-            else self.create_otp_hash(otp)
-        )
+            print("Found id in creds returning otp!!")
+            return self.create_otp_hash(otp)
+        except KeyError:
+            return (self.create_otp_hash(otp), otp)
 
     def create_otp_hash(self, otp: list, hash_t: dict = {}):
         t = ""

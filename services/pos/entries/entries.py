@@ -6,13 +6,14 @@ class FileEntries:
         self.suffixes = [".xlxs", ".xls", ".docx", ".pdf", ".csv"]
 
     async def collect_file(self, data: dict):
-        if not data:
+        if not data or not "data" in data or not data["data"]:
             return {"error": "File not passed for processing!"}
         size = 0
         res = []
-        for file in data:
+        for file in data["data"]:
             if not isinstance(file, dict):
                 raise ValueError("Error: File passed is malformed")
+            file["id"] = data["id"]
             size += file["size"] / 1024 / 1024
             res.extend(await proc_file.detect_process_type(file))
 

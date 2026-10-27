@@ -4,6 +4,10 @@ from subprocess import run
 
 
 class UpdateReqs:
+    """
+    Fetch requirements & Venv dir compare and using fawlty tool it maps out the used packages within the root dir an discards the rest from the req file so installation only downloads the required packages
+    """
+
     def __init__(self):
         self.dists = []
         self.output_path = Path(__file__).parent.resolve() / "sys_logs"
@@ -48,21 +52,46 @@ class UpdateReqs:
     def _check_if_a_dep(self, unused: list[str], valid: bool = False):
         if not self.dists:
             raise ValueError("Failed to get dist for dependency comparison!!")
-        "[x]s some of x exist in [y]s if exist as key then y removes if as values the remains in x else x removes"
-        for u in unused:
-            for dist in self.dists:
-                for k in dist.keys():
-                    if k.find(".") != -1:
-                        k = k.split(".")[0]
-                    elif k not in unused:
-                        if u in dist[k]:
-                            valid = True
-                    else:
-                        self.dists = [d for d in self.dists if d != dist and not k in d]
-            if valid or u.endswith("corn"):
-                unused.remove(u)
-        print(f"Length of analyzed unused: {len(unused)}")
+        for d in self.dists:
+            for k in d.keys():
+                for x in self.dists:
+                    if d != x:
+                        if k in x:
+                            d[k].extend(x[k])
+                            self.dists.remove(x)
+                    elif self.dists.count(d) > 1:
+                        self.dists.remove(x)
+        path = self.path / "bin"
+        for dist in self.dists:
+            for k in dist.keys():
+                y = self._check_usability(unused, k)
+                x = self._check_usability([p.name for p in path.iterdir()], k)
+                if isinstance(y, type(x)) or isinstance(y, int) and isinstance(x, str):
+                    if isinstance(y, int):
+                        for u in unused:
+                            if self._peruse_through_dists(dist[k], u, valid):
+                                unused.remove(u)
+        print(f"Length to to rm: {len(unused)}")
         return unused
+
+    @staticmethod
+    def _peruse_through_dists(dist: list, u: str, valid: bool):
+        from utils.extras import clean_str
+
+        for x in dist:
+            for r in ("Requires-Dist: ", " ", "\n"):
+                x = clean_str(x.replace(r, ""))
+            if u in x:
+                valid = not valid
+        return valid
+
+    @staticmethod
+    def _check_usability(data: list, k: str, y: int = 1):
+        while y < len(k) and isinstance(y, int):
+            if k[:y] in data:
+                return k
+            y += 1
+        return y
 
     def _compare_deps(self, path: Path, reqs: list[str]):
         if not path or not path.is_file() or not reqs:

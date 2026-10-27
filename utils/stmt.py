@@ -11,14 +11,13 @@ class ReadStatements:
         pass
 
     @run_in_thread_pool
-    async def read_stmt(self, model: Any, query: Any = None, flag: str = None):
+    async def read_stmt(
+        self, model: Any, query: Any = None, flag: str = None, stmts: Any = None
+    ):
         from sqlalchemy import select
 
-        if not model:
-            raise ValueError("Error, called without model passed to read!!")
-        stmts: Any = None
         with create_db() as db:
-            if query is None and flag is None:
+            if query is None:
                 stmts = db.scalars(select(model)).all()
             else:
                 for col in model.__table__.c:
@@ -27,14 +26,14 @@ class ReadStatements:
                             select(model).where(
                                 col.type.python_type == type(query) and col == query
                                 if col.key.find("id") == -1
-                                else (col == await self.convert_id(query))
+                                else col == await self.convert_id(query)
                             )
                         ).first()
                     stmts = db.scalars(
                         select(model).where(
                             col.type.python_type == type(query) and col == query
                             if col.key.find("id") == -1
-                            else (col == await self.convert_id(query))
+                            else col == await self.convert_id(query)
                         )
                     ).all()
                     if stmts:
@@ -74,15 +73,22 @@ class ReadStatements:
     @run_in_thread_pool
     async def write_items_to_db(self, model: Any, data: dict):
         mod = model()
-        with create_db() as db:
-            for col in mod.__table__.c:
-                if col.key != "id":
-                    if col.key in data:
-                        setattr(mod, col.key, data[col.key])
-            db.add(mod)
-            db.commit()
+        try:
+            with create_db() as db:
+                for col in mod.__table__.c:
+                    if col.key != "id":
+                        if col.key in data:
+                            setattr(mod, col.key, data[col.key])
+                db.add(mod)
+                db.commit()
 
-            return await self.delete_unneeded_data(await self.read_stmt_to_dict(mod))
+                return await self.delete_unneeded_data(
+                    await self.read_stmt_to_dict(mod)
+                )
+        except Exception:
+            return {
+                "error": "Failed integrity or such case while writing data to server!!"
+            }
 
     @run_in_thread_pool
     async def update_db_entries(self, stmt: Any, record: dict):
@@ -96,8 +102,13 @@ class ReadStatements:
                             setattr(model, col.key, record[col.key])
                         else:
                             if col.key.find("id") != -1:
-                                if record[col.key].count("-") != 4:
+                                if (
+                                    not isinstance(record[col.key], type(prev))
+                                    or record[col.key].count("-") != 4
+                                ):
                                     record[col.key] = prev
+                            elif col.key.startswith("pass") and prev != record[col.key]:
+                                record[col.key] = prev
                             setattr(
                                 model,
                                 col.key,
@@ -134,15 +145,15 @@ class ReadStatements:
             return await self.delete_unneeded_data(await self.read_stmt_to_dict(model))
 
     @run_in_thread_pool
-    async def delete_unneeded_data(self, data: dict, flag: set = {"otp", "password"}):
-        for k in data.copy().keys():
-            if k not in flag:
-                if k.endswith("id"):
-                    data[k] = await self.convert_id(data[k])
-                elif isinstance(data[k], datetime.datetime):
-                    data[k] = data[k].isoformat()
-            else:
-                data = {x: data[x] for x in data.keys() if x != k}
+    async def delete_unneeded_data(
+        self, data: dict, flags: tuple = ("otp", "password")
+    ):
+        data = {k: data[k] for k in data.keys() if k not in flags}
+        for k in data.keys():
+            if k.endswith("id"):
+                data[k] = await self.convert_id(data[k])
+            elif isinstance(data[k], datetime.datetime):
+                data[k] = data[k].isoformat()
         return data
 
     @run_in_thread_pool

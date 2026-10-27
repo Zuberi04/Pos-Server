@@ -13,6 +13,7 @@ class FetchQueryData:
     async def fetch_data(self, data: dict):
         if "collect" in data:
             return self.collect_data_keys(data)
+        print(f"Collecting data for model: {data['name']}")
         res = await r_service.collect_cache(data["id"], data["name"])
         if res:
             res = decode_json_objects(res)

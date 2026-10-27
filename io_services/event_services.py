@@ -21,3 +21,8 @@ class IOServices:
             },
             to=sid,
         )
+
+    async def broadcast_emergency(
+        self,
+    ):
+        return None

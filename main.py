@@ -1,15 +1,12 @@
 import signal
 import logging
 from os import kill, getpid
-from typing import Any
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy.exc import OperationalError
 from starlette.background import BackgroundTask
 from socketio import ASGIApp
-
 from io_services.events import sio
-from database.config import create_db, create_session, create_db_engine
+from database.config import create_db, create_db_engine
 from database.models import Base
 
 # ============App init================
@@ -31,48 +28,40 @@ async def server_init():
     from utils.gen_pwd import genpwd
 
     await genpwd.gen_next_pwd_l()
-    try:
+    """try:
         from setup import update_reqs
-
         update_reqs.audit_installed_pkgs()
     except Exception as exc:
-        print(f"Failed to update requirements: {exc}")
-    init = await initialize_db("reset")
-    if init:
-        return print(
-            init
-            if init and not isinstance(init, bytes)
-            else init.decode("utf-8", errors="replace")
-        )
+        print(f"Failed to update requirements.txt with error:\n {exc}")"""
+    return await initialize_db()
 
 
 @app.on_event("shutdown")
 async def shut_down_services():
     with create_db() as db:
         db.close()
+        return print("App shutting down after success closing db connection!!")
 
 
 async def initialize_db(flag: str = "start"):
-
     from r_services.service import r_service
 
-    try:
-        typ = "postgres"
-        engine = create_db_engine(typ)
-        test_db_active(engine)
-    except Exception:
-        typ = "sqlite"
-        engine = create_db_engine(typ)
-        test_db_active(engine, typ)
-    await write_engine_to_env(f"DB_ENGINE={typ}")
+    engine, typ = create_db_engine()
     if flag == "reset":
-        r_service.reset_redis()
+        try:
+            r = r_service.reset_redis().decode("utf-8")
+        except Exception:
+            r = r_service.reset_redis()
         Base.metadata.drop_all(engine)
         Base.metadata.create_all(engine)
         with create_db() as db:
             db.close()
-            return print("Db dropped && intialized and performed redis reset!!")
-    return print("[DB-CONN] verified successfully")
+            return print(
+                f"Db dropped && intialized with type: {typ.capitalize()} && redis-reset? {r}!!"
+            )
+    return print(
+        f"[DB-CONN] verified successfully with engine type: {typ.capitalize()}"
+    )
 
 
 def emergeny_halt():
@@ -93,6 +82,9 @@ async def report_attack():
     )
 
 
+from sqlalchemy.exc import OperationalError
+
+
 @app.exception_handler(OperationalError)
 async def panic_handler(request: Request, exc: OperationalError):
     print(f"Critical db engine failure with error: \n {exc}")
@@ -104,38 +96,3 @@ async def panic_handler(request: Request, exc: OperationalError):
         },
         headers=request.headers,
     )
-
-
-def test_db_active(engine: Any, flag: str = None):
-    print(f"Flag found with value: {flag}")
-    Base.metadata.reflect(engine)
-    with create_db(flag) as db:
-        db.info.update({"active": True})
-        print("Db session info: ", db.info)
-        return db.close()
-
-
-async def write_engine_to_env(typ: str):
-    print("Writing db engine to env!!")
-    from pathlib import Path
-
-    p = Path(".env")
-    if not p.is_file():
-        raise ValueError("Error env not found!!")
-    print("Starting read of db engine!!")
-    with p.open("a") as w:
-        data: list = None
-        with p.open("r") as r:
-            data = [x.replace("\n", "") for x in r.readlines()]
-        if not data:
-            raise ValueError("Error no data in env!!")
-        for d in data:
-            if d.split("=")[0] == typ.split("=")[0]:
-                data.remove(d)
-        data.append(typ)
-        print("Data found with value: \n", data)
-        for d in data:
-            if not data.index(d):
-                p.write_text(f"{d}\n")
-            else:
-                w.write(f"{d}\n")

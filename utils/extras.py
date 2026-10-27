@@ -75,7 +75,7 @@ def clean_str(data: str):
 
 def clean_data(data: dict, cleaned: dict = {}):
     for k in data.keys():
-        if isinstance(data[k], str) and not k.startswith(("tok", "pass")):
+        if isinstance(data[k], str) and not k.startswith(("tok", "pass", "em")):
             cleaned[clean_str(k)] = clean_str(data[k])
         else:
             cleaned[clean_str(k)] = data[k]
