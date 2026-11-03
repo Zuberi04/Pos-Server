@@ -1,5 +1,4 @@
 import hmac
-
 from r_services.service import r_service
 from utils.extras import decode_json_objects
 
@@ -22,7 +21,6 @@ class OtpGeneration:
             elif "token" in creds:
                 creds["upd"] = True
             return self.create_otp(creds, used)
-        print(f"Creating new otp for user with email: {creds['email']} ")
         return self.create_otp(creds)
 
     def create_otp(self, creds: dict, used: list = None, mx=6 * 2 + 1):
@@ -41,13 +39,11 @@ class OtpGeneration:
                             otp.insert(used.count(c) - used.index(c), c)
         try:
             r_service.cache_data(creds["id"], {"used": otp})
-            print("Found id in creds returning otp!!")
             return self.create_otp_hash(otp)
         except KeyError:
             return (self.create_otp_hash(otp), otp)
 
-    def create_otp_hash(self, otp: list, hash_t: dict = {}):
-        t = ""
+    def create_otp_hash(self, otp: list, hash_t: dict = {}, t: str = ""):
         for item in otp:
             if len(t) < 2:
                 t = t + item
@@ -63,6 +59,22 @@ class OtpGeneration:
     @staticmethod
     def validate_otp(otp: str, hashed: str):
         return hmac.compare_digest(otp, hashed)
+
+    def user_key_encrypt(self, key: str, res: str = None, i: int = 0):
+        unique = "".join([k for k in key if key.count(k) == 1])
+        same = "".join([k for k in key if k not in unique])
+        while len(res) < len(key):
+            for item in (unique, same):
+                if item[i] not in res or item != unique:
+                    res, item = self.concat("" if not res else res, item, i)
+                    i = len(res)
+                break
+            i += 1 if len(res) != i else -1
+        return res
+
+    @staticmethod
+    def concat(res: str, inp: str, x: int):
+        return res + inp[x]
 
 
 gen_otp = OtpGeneration()

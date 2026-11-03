@@ -1,9 +1,8 @@
-from calendar import c
 import datetime
 
 from typing import Any
 from database.config import create_db
-from utils.extras import run_in_thread_pool
+from utils.extras import run_in_thread_pool, MODELS
 
 
 class ReadStatements:
@@ -12,16 +11,23 @@ class ReadStatements:
 
     @run_in_thread_pool
     async def read_stmt(
-        self, model: Any, query: Any = None, flag: str = None, stmts: Any = None
+        self,
+        model: Any,
+        query: Any = None,
+        column: str = None,
+        flag: str = None,
+        stmts: Any = None,
     ):
         from sqlalchemy import select
 
         with create_db() as db:
-            if query is None:
+            if not query and not column:
                 stmts = db.scalars(select(model)).all()
             else:
                 for col in model.__table__.c:
-                    if flag:
+                    if column and col.key == column:
+                        return db.scalars(select(col).select_from(model.__table__))
+                    elif flag:
                         return db.scalars(
                             select(model).where(
                                 col.type.python_type == type(query) and col == query
@@ -29,13 +35,14 @@ class ReadStatements:
                                 else col == await self.convert_id(query)
                             )
                         ).first()
-                    stmts = db.scalars(
-                        select(model).where(
-                            col.type.python_type == type(query) and col == query
-                            if col.key.find("id") == -1
-                            else col == await self.convert_id(query)
-                        )
-                    ).all()
+                    else:
+                        stmts = db.scalars(
+                            select(model).where(
+                                col.type.python_type == type(query) and col == query
+                                if col.key.find("id") == -1
+                                else col == await self.convert_id(query)
+                            )
+                        ).all()
                     if stmts:
                         break
             if not stmts:
@@ -73,22 +80,39 @@ class ReadStatements:
     @run_in_thread_pool
     async def write_items_to_db(self, model: Any, data: dict):
         mod = model()
-        try:
-            with create_db() as db:
-                for col in mod.__table__.c:
-                    if col.key != "id":
-                        if col.key in data:
-                            setattr(mod, col.key, data[col.key])
-                db.add(mod)
-                db.commit()
 
-                return await self.delete_unneeded_data(
-                    await self.read_stmt_to_dict(mod)
+        with create_db() as db:
+            for col in mod.__table__.c:
+                if col.key in data and col.key != "id":
+                    try:
+                        if isinstance(data[col.key], col.type.python_type):
+                            setattr(mod, col.key, data[col.key])
+                    except Exception:
+                        setattr(mod, col.key, data[col.key])
+            db.add(mod)
+            db.commit()
+            return await self.update_audits(
+                model, data, await self.read_stmt_to_dict(mod)
+            )
+
+    async def update_audits(self, model, data, record: dict, prev: dict = None):
+        if model in MODELS:
+            from services.pos.audits import audit_log
+
+            if "user_id" in data:
+                await audit_log.add_audit_log(
+                    record, data["user_id"], model.__name__, prev
                 )
-        except Exception:
-            return {
-                "error": "Failed integrity or such case while writing data to server!!"
-            }
+            else:
+                from utils.rel import upd
+
+                user_id = await upd.find_user_id(record)
+                if not user_id:
+                    raise ValueError("Failed to find user id!!")
+                await audit_log.add_audit_log(
+                    record, data["user_id"], model.__name__, prev
+                )
+        return await self.delete_unneeded_data(record)
 
     @run_in_thread_pool
     async def update_db_entries(self, stmt: Any, record: dict):
@@ -96,53 +120,38 @@ class ReadStatements:
             model = db.merge(stmt)
             for col in model.__table__.c:
                 prev = getattr(model, col.key)
-                if col.key in record:
+                if col.key in record and col.key != "id":
                     if not isinstance(prev, (float, int)):
                         if not isinstance(prev, str):
                             setattr(model, col.key, record[col.key])
                         else:
-                            if col.key.find("id") != -1:
-                                if (
-                                    not isinstance(record[col.key], type(prev))
-                                    or record[col.key].count("-") != 4
-                                ):
-                                    record[col.key] = prev
-                            elif col.key.startswith("pass") and prev != record[col.key]:
-                                record[col.key] = prev
                             setattr(
                                 model,
                                 col.key,
                                 record[col.key] if record[col.key] else prev,
                             )
                     else:
-                        from r_services.service import r_service
-                        from utils.extras import decode_json_objects
-
-                        f = await r_service.collect_cache(model.__tablename__, col.key)
-                        if f:
-                            f = decode_json_objects(f)
-                            if isinstance(f, dict):
-                                setattr(
-                                    model,
-                                    col.key,
-                                    prev + float(f["x"]) + float(f["y"]),
-                                )
-                            else:
-                                setattr(
-                                    model,
-                                    col.key,
-                                    prev + float(f + f"{record[col.key]}"),
-                                )
-                        else:
-                            setattr(model, col.key, record[col.key])
+                        setattr(
+                            model,
+                            col.key,
+                            (
+                                record[col.key]
+                                if not isinstance(record[col.key], str)
+                                else prev + int(float(record[col.key]))
+                            ),
+                        )
                 elif col.key.startswith("upd"):
                     setattr(model, col.key, datetime.datetime.now())
-                elif prev:
+                else:
                     setattr(model, col.key, prev)
             db.commit()
             db.refresh(model)
-
-            return await self.delete_unneeded_data(await self.read_stmt_to_dict(model))
+            return await self.update_audits(
+                model,
+                record,
+                await self.read_stmt_to_dict(model),
+                await self.read_stmt_to_dict(stmt),
+            )
 
     @run_in_thread_pool
     async def delete_unneeded_data(
@@ -164,20 +173,16 @@ class ReadStatements:
             for rec in data:
                 for k in rec.keys():
                     if not k.endswith(("id", "ed")):
-                        if isinstance(rec[k], str):
-                            if k in nxt and nxt[k] == rec[k]:
-                                return await self.read_stmt(model, rec["id"], "upd")
+                        if isinstance(rec[k], str) and k in nxt and nxt[k] == rec[k]:
+                            return await self.read_stmt(model, rec["id"], flag="upd")
         return None
 
     @run_in_thread_pool
     async def check_if_update_or_new_entry(
         self, data: dict, model: Any, flag: bool = False
     ):
-        cols = [c.key for c in model.__table__.c]
         for k in data.keys():
-            if not flag and k.find("id") == -1:
-                continue
-            elif k in cols:
+            if flag or k.find("id") != -1 and isinstance(data[k], str):
                 upd = await self.check_if_values_upd(
                     await self.read_stmt(model, data[k]), data, model
                 )

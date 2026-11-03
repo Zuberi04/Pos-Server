@@ -73,13 +73,20 @@ def clean_str(data: str):
     return data.lower().strip()
 
 
-def clean_data(data: dict, cleaned: dict = {}):
-    for k in data.keys():
-        if isinstance(data[k], str) and not k.startswith(("tok", "pass", "em")):
-            cleaned[clean_str(k)] = clean_str(data[k])
+def clean_data(
+    data: dict, flag: str = None, flags: list = ["token", "password", "otp"]
+):
+    for k in data.copy().keys():
+        if k in flags:
+            if not flag or flags.index(k) > 1:
+                del data[k]
         else:
-            cleaned[clean_str(k)] = data[k]
-    return cleaned
+            data[clean_str(k)] = (
+                clean_str(data[k])
+                if isinstance(data[k], str) and k != "email"
+                else data[k]
+            )
+    return data
 
 
 db_keys = {"POSTGRES_USER", "POSTGRES_PASSWORD", "DB_HOST", "DB_URL"}

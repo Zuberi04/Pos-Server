@@ -1,39 +1,35 @@
+import time
+
+
 class EstimateCOG:
-    "C.O.G: assumption being that a p  makes a max profit of 190% of its 100% sale. Thus C.O.G can be calculated from its R.P"
+    "C.O.G: assumption being that a p  makes a max profit of 200% of its 100% sale. Thus C.O.G can be calculated from its R.P"
 
     def __init__(self):
-        self.eff = {"max": 2.90, "min": 2.00}
+        self.eff = {"max": 2.00, "min": 1.00}
 
-    def parse_cog(self, cog: float, data: dict, x: float = 0):
+    def parse_cog(self, cog: float, data: dict, x: float = 1.00):
+        from math import sqrt
 
-        while x < self.eff["max"] + 0.1:
-            p = cog * self.eff["min"] if not x else x
-            if data["price"] != p:
-                if p > data["price"]:
-                    if p / data["price"] - 1 > 0.15:
-                        return self.calculate_cog_from_r_price(
-                            data, p, x - self.eff["min"] if x else p / cog
-                        )
-                elif 1 - p / data["price"] > 0.15:
-                    if not x:
-                        x = self.eff["min"] + cog / data["price"]
-                    else:
-                        x += cog / data["price"]
-                    continue
-            data["amount"] = cog
+        while x < self.eff["max"]:
+            if round(data["price"], 2) != round(cog * x, 2):
+                if not self.check_if_in_range(cog * x, data["price"]):
+                    if data["price"] > (cog * x):
+                        x += sqrt(sqrt(data["price"]) - sqrt(cog))
+                        continue
+                    return self.calculate_cog_from_r_price(data, cog * x)
+            print("Data passed for pricing: \n", data)
+            data["amount"] = cog * data["stock"]
             return data
-        print(
-            f"Failed to find cog equality with amount {cog} and mov of {x} and price: {data['price']}"
+        raise ArithmeticError(
+            f"Failed in parsing cog with error val lack of equality check btw {data['price']} and {cog} at e of {x}"
         )
-        return self.calculate_cog_from_r_price(data, cog, x - self.eff["min"])
 
-    def calculate_cog_from_r_price(self, data: dict, cog: float = 0, x: float = 0):
-        if not "price" in data or "amount" in data and not cog:
+    def calculate_cog_from_r_price(self, data: dict, cog: float = 0):
+        if not "price" or not "stock" in data or "amount" in data:
             return data
-        elif cog:
-            for k in self.eff.keys():
-                self.eff[k] = self.calc_n_eff(self.eff[k], cog, data["price"], x)
-            cog = 0
+        elif cog and cog > data["price"]:
+            self.eff = self.calc_n_eff(cog, data["price"])
+        cog = 0
         for k in self.eff.keys():
             cog += data["price"] / self.eff[k]
         cog *= 1 / len(self.eff)
@@ -42,17 +38,16 @@ class EstimateCOG:
             return self.calculate_cog_from_r_price(data, cog)
         return self.parse_cog(cog, data)
 
+    def calc_n_eff(self, m: float, x: float):
+        for e in self.eff.keys():
+            self.eff[e] = m / x * self.eff[e]
+        return self.eff
+
     @staticmethod
-    def calc_n_eff(k: float, cog: float, price: float | int, x: float = 0):
-        m = cog / price
-        if k != m:
-            if k > m:
-                return k - m
-            try:
-                return k - m / x
-            except ZeroDivisionError:
-                return (m / k) - k
-        return k
+    def check_if_in_range(x: float, price: float):
+        if price * 0.9 <= x <= price * 1.15:
+            return True
+        return False
 
 
 est_price = EstimateCOG()

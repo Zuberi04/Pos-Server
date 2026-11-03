@@ -9,6 +9,9 @@ from io_services.events import sio
 from database.config import create_db, create_db_engine
 from database.models import Base
 
+from r_services.service import r_service
+from utils.gen_pwd import genpwd
+
 # ============App init================
 
 app = FastAPI(title="Archie's Pos", debug=True)
@@ -25,15 +28,8 @@ app.mount("/", ASGIApp(sio, socketio_path="socket.io"))
 
 @app.on_event("startup")
 async def server_init():
-    from utils.gen_pwd import genpwd
-
-    await genpwd.gen_next_pwd_l()
-    """try:
-        from setup import update_reqs
-        update_reqs.audit_installed_pkgs()
-    except Exception as exc:
-        print(f"Failed to update requirements.txt with error:\n {exc}")"""
-    return await initialize_db()
+    print("App booting app...get it?")
+    # return await initialize_app("reset")
 
 
 @app.on_event("shutdown")
@@ -43,8 +39,13 @@ async def shut_down_services():
         return print("App shutting down after success closing db connection!!")
 
 
-async def initialize_db(flag: str = "start"):
-    from r_services.service import r_service
+async def initialize_app(flag: str = "start"):
+    await genpwd.gen_next_pwd_l()
+    """try:
+        from setup import update_reqs
+        update_reqs.audit_installed_pkgs()
+    except Exception as exc:
+        print(f"Failed to update requirements.txt with error:\n {exc}")"""
 
     engine, typ = create_db_engine()
     if flag == "reset":

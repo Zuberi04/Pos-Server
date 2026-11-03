@@ -52,7 +52,7 @@ def create_db_engine() -> tuple[Engine, str]:
             create_engine(
                 f"sqlite:///{DB_FILE}",
                 echo=echo,
-                connect_args={"timeout": 30},
+                # connect_args={"timeout": 30},
             ),
             "sqlite",
         )
