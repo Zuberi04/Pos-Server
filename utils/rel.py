@@ -1,3 +1,4 @@
+from sqlite3 import IntegrityError
 from typing import Any
 
 from utils.find_fit import find_fit_model
@@ -15,12 +16,14 @@ class FindRelationBtwData:
         if mod.__name__.endswith("tory") and not "amount" in record:
             record = est_price.calculate_cog_from_r_price(record)
         exist = await self.check_if_relshp_v_exist(mod, record)
+        print("Exist with values: \n", exist)
         if exist:
             deps = self.find_else_r_might_exist_in_models(
                 (mod, exist[0] if isinstance(exist, tuple) else None)
             )
             if deps:
                 deps.extend([mod, exist[0] if isinstance(exist, tuple) else None])
+            print("Depends on: \n", deps)
             return await self.write_to_dependency(record, deps)
         tn, key = self.check_if_model_contains_relations(mod)
         wrote = await self.find_belongs_to(tn, record)
@@ -84,6 +87,7 @@ class FindRelationBtwData:
                         )
                     if infer["m"] in models:
                         models.remove(infer["m"])
+                    print(f"Model found from infer: {infer['m']} parent of {m}:")
                     res.append(await self.update_write_or_return(infer["m"], record))
                     models.append(m)
                 else:
@@ -116,19 +120,27 @@ class FindRelationBtwData:
                             record[k]
                         )
                         del record[k]
-                        return record
-                if k in [c.key for c in model.__table__.c]:
+                        return (m, record)
+                if (
+                    k.endswith("id")
+                    and k != "id"
+                    and k in [c.key for c in model.__table__.c]
+                ):
                     return record
         return None
 
-    @staticmethod
-    async def update_write_or_return(model: Any, record: dict):
-        update = await upd.check_if_update(record, model, model.__tablename__)
-        if update and isinstance(update, tuple):
-            return await read_stmt.update_db_entries(update[0], update[1])
-        return (
-            await read_stmt.write_items_to_db(model, record) if not update else update
-        )
+    async def update_write_or_return(self, model: Any, record: dict):
+        try:
+            update = await upd.check_if_update(record, model, model.__tablename__)
+            if update and isinstance(update, tuple):
+                return await read_stmt.update_db_entries(update[0], update[1])
+            return (
+                await read_stmt.write_items_to_db(model, record)
+                if not update
+                else update
+            )
+        except IntegrityError:
+            return await self.check_if_rel_is_needed(record, model)
 
 
 relshp = FindRelationBtwData()

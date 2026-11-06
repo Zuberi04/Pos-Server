@@ -52,12 +52,11 @@ class ValidateCreds:
             ),
         )
         if not stmt:
-            if "fullnames" in creds:
-                try:
+            try:
+                if creds["fullnames"]:
                     return await self.sign_up_user(creds)
-                except TypeError:
-                    return await self.clean_credentials(creds, True)
-            return {"error": "Unknown user accessing system!!"}
+            except KeyError:
+                return {"error": "Unknown user accessing system!!"}
         elif isinstance(creds, str):
             return None
         elif "password" in creds and not self.hash_or_compare(
@@ -66,42 +65,32 @@ class ValidateCreds:
         ):
             if not "reset" or "fullnames" in creds:
                 return {"error": "Invalid user credentials passed!!"}
-        elif "password" in creds:
+        elif "password" and "reset" in creds:
             creds["password"] = self.hash_or_compare(creds["password"])
         elif "token" in creds:
             token = await auth_token.validate_token(creds)
             if token:
                 return await read_stmt.delete_unneeded_data(token)
-        try:
-            return await self.validate_otp(creds, stmt)
-        except Exception as e:
-            raise ValueError(f"Error occurred with val: {e}") from e
+        return await self.validate_otp(creds, stmt)
 
     @staticmethod
     async def validate_otp(creds: dict, stmt: dict):
-        creds["otp"] = await gen_otp.check_if_validate_or_create(creds, stmt)
-        if isinstance(creds["otp"], str):
+        creds["otp"] = gen_otp.check_if_validate_or_create(creds, stmt)
+        if not isinstance(creds["otp"], dict):
             return auth_token.generate_token(
                 await read_stmt.update_db_entries(
                     await read_stmt.read_stmt(AdminUser, stmt["id"], flag="upd"),
                     creds,
                 )
             )
-        elif isinstance(creds["otp"], dict):
-            return creds["otp"]
-        raise ValueError("System error with malformed value otp tuple")
+        return creds["otp"]
 
     async def sign_up_user(self, creds: dict):
         creds["password"] = self.hash_or_compare(creds["password"])
-        hash = await gen_otp.check_if_validate_or_create(creds)
-        if not isinstance(hash, tuple):
-            raise TypeError(f"System error with type value: {type(hash), hash}")
-        creds["otp"] = hash[0]
-        wrote = await read_stmt.write_items_to_db(AdminUser, creds)
-        from r_services.service import r_service
-
-        r_service.cache_data(wrote["id"], {"used": hash[1]})
-        return auth_token.generate_token(wrote)
+        creds["otp"] = gen_otp.check_if_validate_or_create(creds)
+        return auth_token.generate_token(
+            await read_stmt.write_items_to_db(AdminUser, creds)
+        )
 
     @staticmethod
     def hash_or_compare(password: str | bytes, db_pass: bytes = None):

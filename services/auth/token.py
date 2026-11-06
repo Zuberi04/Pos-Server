@@ -7,6 +7,7 @@ class JwtTokens:
         pass
 
     def generate_token(self, creds: dict):
+        print("Creds passed for token generation!!")
         if len(creds) > 1:
             creds["token"] = jwt.encode(
                 payload={

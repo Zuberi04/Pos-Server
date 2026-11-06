@@ -29,7 +29,7 @@ app.mount("/", ASGIApp(sio, socketio_path="socket.io"))
 @app.on_event("startup")
 async def server_init():
     print("App booting app...get it?")
-    # return await initialize_app("reset")
+    return await initialize_app()
 
 
 @app.on_event("shutdown")

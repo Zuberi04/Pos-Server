@@ -107,9 +107,7 @@ class ReadStatements:
                 user_id = await upd.find_user_id(record)
                 if not user_id:
                     raise ValueError("Failed to find user id!!")
-                await audit_log.add_audit_log(
-                    record, data["user_id"], model.__name__, prev
-                )
+                await audit_log.add_audit_log(record, user_id, model.__name__, prev)
         return await self.delete_unneeded_data(record)
 
     @run_in_thread_pool
@@ -120,14 +118,8 @@ class ReadStatements:
                 prev = getattr(model, col.key)
                 if col.key in record and col.key != "id":
                     if not isinstance(prev, (float, int)):
-                        if not isinstance(prev, str):
+                        if record[col.key] and isinstance(record[col.key], type(prev)):
                             setattr(model, col.key, record[col.key])
-                        else:
-                            setattr(
-                                model,
-                                col.key,
-                                record[col.key] if record[col.key] else prev,
-                            )
                     else:
                         setattr(
                             model,
@@ -176,14 +168,15 @@ class ReadStatements:
                         and rec[k] == nxt[k]
                     ):
                         for x in rec.keys():
-                            if (
-                                x in nxt
-                                and isinstance(rec[x], str)
-                                and nxt[x] == rec[x]
-                            ):
-                                return await self.read_stmt(
-                                    model, rec["id"], flag="upd"
-                                )
+                            if not x.startswith(self.ts_flags) and not x.endswith("id"):
+                                if (
+                                    isinstance(rec[x], str)
+                                    and x in nxt
+                                    and nxt[x] == rec[x]
+                                ):
+                                    return await self.read_stmt(
+                                        model, rec["id"], flag="upd"
+                                    )
         return None
 
     @run_in_thread_pool
