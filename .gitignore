@@ -21,3 +21,4 @@ env/
 pos_data/
 services/pos/data_logs/
 sys_logs/
+services/audits/
