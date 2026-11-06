@@ -27,7 +27,7 @@ class FindFitToModel:
             for n in names:
                 if self.check_if_a_compares_b(name, n):
                     return await self.find_similarity_in_columns(
-                        record, model, model.__name__
+                        record, (model,), model.__name__
                     )
         return await self.find_similarity_in_columns(record)
 
@@ -58,21 +58,20 @@ class FindFitToModel:
                                 )
             w += infer["v"]
             if w and w < infer["v"] / len(infer["k"]):
-                return await self.find_similarity_in_columns(record, infer["m"])
+                return await self.find_similarity_in_columns(record, (infer["m"],))
         print("Records before normalzation: \n", record)
         return await self.normalize_attr(infer, record)
 
     async def find_similarity_in_columns(
-        self, record: dict, mod: Any = None, flag: str = None, result: list = []
+        self, record: dict, excpt: tuple = None, flag: str = None, result: list = []
     ):
         for model in self.models:
             r = {"m": model, "k": [], "v": 0}
-            if mod:
-                if mod == model:
-                    if flag:
-                        r["v"] += 1
-                    else:
-                        continue
+            if excpt and model in excpt:
+                if flag:
+                    r["v"] += 1
+                else:
+                    continue
             for col in model.__table__.c:
                 if col.key != "id" and not col.key.endswith("ed"):
                     for k in record.keys():
@@ -97,13 +96,13 @@ class FindFitToModel:
                 else:
                     result.append(r)
         print("Models infered with values: \n", result)
-        return await self.find_greatest_potential_of_exist(result, record, mod)
+        return await self.find_greatest_potential_of_exist(result, record, excpt)
 
     async def find_greatest_potential_of_exist(
         self,
         result: list,
         record: dict,
-        flag: Any = None,
+        flag: tuple = None,
         infer: dict = None,
     ):
         def check_relshp_exist(models: list):
@@ -121,7 +120,7 @@ class FindFitToModel:
 
         for r in result:
             c = 0
-            if not flag or flag != r["m"]:
+            if not flag or r["m"] not in flag:
                 if r["v"]:
                     if (
                         infer
@@ -146,7 +145,7 @@ class FindFitToModel:
         if len(infer["k"]) <= len(result) * 0.5:
             print("Recursion taking place due to infered cols <= 0.5 of len(to-infer)")
             return await self.find_greatest_potential_of_exist(
-                result, record, infer["m"]
+                result, record, (infer["m"],)
             )
         return await self.find_fit_in_model_table_values(record, infer)
 
@@ -157,10 +156,11 @@ class FindFitToModel:
             return await self.find_similarity_in_columns(record)
         for k in infer["k"]:
             for x in k.keys():
-                if not norm:
-                    norm = {x: record[x if x in record else k[x]]}
-                else:
-                    norm[x] = record[x if x in record else k[x]]
+                if k[x] in record:
+                    if not norm:
+                        norm = {x: record[k[x]]}
+                    else:
+                        norm[x] = record[k[x]]
         print("Normalized data: \n", norm)
         return (infer, self.fill_missing_v(record, norm))
 

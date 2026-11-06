@@ -2,12 +2,12 @@ import datetime
 
 from typing import Any
 from database.config import create_db
-from utils.extras import run_in_thread_pool, MODELS
+from utils.extras import run_in_thread_pool, MODELS, TS_FLAGS, clean_str
 
 
 class ReadStatements:
     def __init__(self):
-        pass
+        self.ts_flags = TS_FLAGS
 
     @run_in_thread_pool
     async def read_stmt(
@@ -63,8 +63,6 @@ class ReadStatements:
                 for c in inspect(stmt, raiseerr=ValueError).mapper.column_attrs
             }
         except ValueError:
-            from utils.extras import clean_str
-
             return {
                 clean_str(col.key): getattr(stmt, col.key, None)
                 for col in stmt.__table__.c
@@ -168,13 +166,24 @@ class ReadStatements:
     @run_in_thread_pool
     async def check_if_values_upd(self, data: list | dict, nxt: dict, model: Any):
         if data:
-            if not isinstance(data, list):
-                data = [data]
+            data = [data] if not isinstance(data, list) else data
             for rec in data:
-                for k in rec.keys():
-                    if not k.endswith(("id", "ed")):
-                        if isinstance(rec[k], str) and k in nxt and nxt[k] == rec[k]:
-                            return await self.read_stmt(model, rec["id"], flag="upd")
+                for k in nxt.keys():
+                    if (
+                        not k.startswith(self.ts_flags)
+                        and k.endswith("id")
+                        and k in rec
+                        and rec[k] == nxt[k]
+                    ):
+                        for x in rec.keys():
+                            if (
+                                x in nxt
+                                and isinstance(rec[x], str)
+                                and nxt[x] == rec[x]
+                            ):
+                                return await self.read_stmt(
+                                    model, rec["id"], flag="upd"
+                                )
         return None
 
     @run_in_thread_pool

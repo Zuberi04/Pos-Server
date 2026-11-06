@@ -90,6 +90,7 @@ def clean_data(
 
 
 db_keys = {"POSTGRES_USER", "POSTGRES_PASSWORD", "DB_HOST", "DB_URL"}
+TS_FLAGS = ("create", "update")
 
 
 from functools import wraps, partial

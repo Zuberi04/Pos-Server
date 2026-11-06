@@ -9,19 +9,19 @@ from utils.cog_pricing import est_price
 class FindRelationBtwData:
     def __init__(self):
         self.models = MODELS
+        self.user_rel_m = ("inventory", "expense", "operation")
 
     async def check_if_rel_is_needed(self, record: dict, mod: Any, sleep: Any):
         if mod.__name__.endswith("tory") and not "amount" in record:
             record = est_price.calculate_cog_from_r_price(record)
         exist = await self.check_if_relshp_v_exist(mod, record)
-        if exist or mod.__name__.endswith(("ry", "se")):
-            return self.write_to_dependency(
-                record,
-                self.find_where_else_data_might_exist(
-                    (mod, exist[0] if exist else exist)
-                ),
-                [mod, exist[0] if exist else exist],
+        if exist:
+            deps = self.find_else_r_might_exist_in_models(
+                (mod, exist[0] if isinstance(exist, tuple) else None)
             )
+            if deps:
+                deps.extend([mod, exist[0] if isinstance(exist, tuple) else None])
+            return await self.write_to_dependency(record, deps)
         tn, key = self.check_if_model_contains_relations(mod)
         wrote = await self.find_belongs_to(tn, record)
         if not wrote or not "id" in wrote:
@@ -29,14 +29,7 @@ class FindRelationBtwData:
                 f"Failed writing record to model: {tn} with values:\n {wrote}!!"
             )
         record[key] = wrote["id"]
-        update = await upd.check_if_update(record, mod, mod.__tablename__)
-        if update:
-            if isinstance(upd, tuple):
-                wrote.update(await read_stmt.update_db_entries(update[0], update[1]))
-            else:
-                wrote.update(update)
-        else:
-            wrote.update(await read_stmt.write_items_to_db(mod, record))
+        wrote.update(await self.update_write_or_return(mod, record))
         return wrote
 
     @staticmethod
@@ -47,8 +40,8 @@ class FindRelationBtwData:
                     return (fk.column.table.name, col.key)
         return None
 
-    def find_where_else_data_might_exist(
-        self, models: tuple = None, result: set = set()
+    def find_else_r_might_exist_in_models(
+        self, models: tuple = None, result: list = None
     ):
         if models:
             for m in self.models:
@@ -59,108 +52,83 @@ class FindRelationBtwData:
                             and mod.__tablename__
                             == self.check_if_model_contains_relations(m)[0]
                         ):
-                            result.add(m)
-        return result if len(result) else None
+                            if not result:
+                                result = [m]
+                            elif m not in result:
+                                result.append(m)
+        return result
 
     async def write_to_dependency(
         self,
         record: dict,
-        deps: set,
         models: list,
-        infered: dict = None,
-        r: bool = False,
         res: list = [],
     ):
         for m in models:
+            models = [x for x in models if x != m]
             if m:
+                rel = self.check_if_model_contains_relations(m)
                 if res:
-                    record[self.check_if_model_contains_relations(m)[1]] = res[-1]["id"]
-                update = await upd.check_if_update(record, m, m.__tablename__)
-                if update:
-                    if isinstance(update, tuple):
-                        res.append(
-                            await read_stmt.update_db_entries(update[0], update[1])
+                    record[rel[1]] = res[-1]["id"]
+                elif not rel[1] in record:
+                    infer, record = await find_fit_model.find_similarity_in_columns(
+                        record, (m,)
+                    )
+                    while infer["m"].__tablename__ != rel[0]:
+                        infer, record = await find_fit_model.find_similarity_in_columns(
+                            record,
+                            (
+                                infer["m"],
+                                m,
+                            ),
                         )
-                    else:
-                        res.append(update)
+                    if infer["m"] in models:
+                        models.remove(infer["m"])
+                    res.append(await self.update_write_or_return(infer["m"], record))
+                    models.append(m)
                 else:
-                    if not models.index(m) and not r:
-                        models.sort(reverse=True)
-                        return await self.write_to_dependency(
-                            record, deps, models, r=True
-                        )
-                    res.append(await read_stmt.write_items_to_db(m, record))
-                r: int = 5
-                while deps and r:
-                    infer, record = find_fit_model.find_similarity_in_columns(record, m)
-                    if infer["m"] in deps:
-                        if infer["m"] not in models:
-                            if infered:
-                                if infered["m"] == infer["m"]:
-                                    break
-                                elif infered["v"] < infer["v"] and len(
-                                    infered["k"]
-                                ) < len(infer["k"]):
-                                    infered = infer
-                            else:
-                                infered = infer
-                        deps = deps.difference([infer["m"]])
-                    r -= 1
-                if infered:
-                    record[self.check_if_model_contains_relations(infered["m"])[1]] = (
-                        res[-1]["id"]
-                    )
-                    update = await upd.check_if_update(
-                        record, infered["m"], infered["m"].__tablename__
-                    )
-                    if update:
-                        if isinstance(update, tuple):
-                            res.append(
-                                await read_stmt.update_db_entries(update[0], update[1])
-                            )
-                        else:
-                            res.append(update)
-                    else:
-                        res.append(
-                            await read_stmt.write_items_to_db(infered["m"], record)
-                        )
-                elif m in models:
-                    models.remove(m)
+                    res.append(await self.update_write_or_return(m, record))
         return res
 
-    async def find_belongs_to(self, tn: str, record: dict, inf: Any = None):
+    async def find_belongs_to(self, tn: str, record: dict):
         print("Table found with name: ", tn)
         if tn.endswith("ory"):
             record = est_price.calculate_cog_from_r_price(record)
         for model in self.models:
             if model.__tablename__ == tn:
-                infer, record = await find_fit_model.find_similarity_in_columns(
-                    record, inf
-                )
-                if infer["m"] != model:
+                infer, record = await find_fit_model.find_similarity_in_columns(record)
+                while infer["m"] != model:
                     print(f"Recursing due inquality model: {infer['m']}: {model}")
-                    return await self.find_belongs_to(tn, record, infer["m"])
-                update = await upd.check_if_update(record, model, tn)
-                if update:
-                    if isinstance(update, tuple):
-                        return await read_stmt.update_db_entries(update[0], update[1])
-                    return update
-                return await read_stmt.write_items_to_db(model, record)
+                    infer, record = await find_fit_model.find_similarity_in_columns(
+                        record, (infer["m"],)
+                    )
+                return await self.update_write_or_return(model, record)
         return None
 
     async def check_if_relshp_v_exist(self, model: Any, record: dict):
-        rel = self.check_if_model_contains_relations(model)
-        for m in self.models:
-            if m.__tablename__ == rel[0]:
-                ids = [id for id in await read_stmt.read_stmt(m, column="id")]
-                print("IDS found with value: \n", ids)
-                if ids:
-                    for k in record.copy().keys():
-                        if k.endswith("id") and record[k] in ids:
-                            record[rel[1]] = record[k]
-                            del record[k]
-                            return (m, record)
+        for k in record.copy().keys():
+            if k.endswith("id"):
+                for m in self.models:
+                    if m != model and record[k] in [
+                        id for id in await read_stmt.read_stmt(m, column="id")
+                    ]:
+                        record[self.check_if_model_contains_relations(model)[1]] = (
+                            record[k]
+                        )
+                        del record[k]
+                        return record
+                if k in [c.key for c in model.__table__.c]:
+                    return record
         return None
+
+    @staticmethod
+    async def update_write_or_return(model: Any, record: dict):
+        update = await upd.check_if_update(record, model, model.__tablename__)
+        if update and isinstance(update, tuple):
+            return await read_stmt.update_db_entries(update[0], update[1])
+        return (
+            await read_stmt.write_items_to_db(model, record) if not update else update
+        )
 
 
 relshp = FindRelationBtwData()
@@ -212,11 +180,11 @@ class FindUpdate:
                         print("Linear occured with values: ", linear)
                         if not isinstance(linear, str):
                             occur = await self.find_how_update_occurs(prev, tn, record)
-                            if (
-                                not tn.startswith(self.tn_flags)
-                                or k.find("price") != -1
-                            ):
-                                if occur and occur in linear:
+                            if occur and occur in linear:
+                                if (
+                                    not tn.startswith(self.tn_flags)
+                                    or k.find("price") != -1
+                                ):
                                     inqs[k] = linear[occur]
                         else:
                             return linear
@@ -261,27 +229,28 @@ class FindUpdate:
                                         record[k] = inqs[k] + str(record[k])
                         print(f"Updating model: {tn} with values: \n {record}")
                     return (exist, record)
-                else:
-                    raise ValueError("Failed to get any inquired update!!")
             return prev
         return None
 
     async def find_how_update_occurs(self, prev: dict, tn: str, nxt: dict):
         print("Finding how update occurs...")
         for m in self.models:
-            if m.__tablename__ != tn:
-                rel = relshp.check_if_model_contains_relations(m)
-                if rel[0] == tn:
-                    return await self.check_if_child_updated(
-                        await read_stmt.read_stmt(m, prev["id"]), nxt, prev
-                    )
+            if (
+                m.__tablename__ != tn
+                and relshp.check_if_model_contains_relations(m)[0] == tn
+            ):
+                print(f"Checking if child-table was updated for table: {tn}")
+                return await self.check_if_child_updated(
+                    await read_stmt.read_stmt(m, prev["id"]), nxt, prev
+                )
         return None
 
     async def check_if_child_updated(
         self, records: list, act: dict, prev: dict, recursed: bool = False
     ):
-        print("Checking if child is updated...")
+        print(f"Checking if child is updated with records: \n {records}")
         if records:
+            records = [records] if not isinstance(records, list) else records
             for r in records:
                 for k in r.keys():
                     if (
@@ -296,6 +265,7 @@ class FindUpdate:
                                 f"Malformed db entries in table with data: \n {r}"
                             )
                         elif self.check_inequality(prev, act, r):
+                            print("Inequality found with the data sets!!")
                             if self.compare_ts(r, prev):
                                 return await self.check_manner_of_upd_from_child(r, act)
                             for f in self.f_keys.keys():
