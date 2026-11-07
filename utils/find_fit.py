@@ -1,41 +1,88 @@
 from typing import Any
-from utils.extras import MODELS, clean_str, clean_data
+from utils.extras import MODELS, clean_str, clean_data, TS_FLAGS
 
 
 class FindFitToModel:
 
     def __init__(self):
         self.models = MODELS
+        self.ts_flags = TS_FLAGS
 
     @staticmethod
-    def check_if_a_compares_b(a: str, b: str, k: int = 0):
-        "b = 1 a== b = 1 else not b < b * 0.25"
-        if a != b:
-            for c in a:
-                if c not in b and b.find(c) == -1:
-                    k += 1
-            if k < len(b) * 0.5 and len(a) * 0.5 > k < len(b) * 0.15:
+    def find_p(a: str, x: str):
+        return a == x or a in x
+
+    @staticmethod
+    async def levenshtein_dist_mapper(splits: list, letters: str):
+        result = set()
+        for l, r in splits:
+            if r:
+                result.update([l + r[1:]], [l + c + r[1:] for c in letters])
+                if len(r) > 1:
+                    result.update([l + r[1] + r[0] + r[2:]])
+            result.update([l + c + r for c in letters])
+        return result
+
+    async def extend_mapper(self, edits: set, letters: str):
+        return {
+            e2
+            for e1 in edits
+            for e2 in await self.levenshtein_dist_mapper(
+                [(e1[:i], e1[i:]) for i in range(len(e1) + 1)], letters
+            )
+        }
+
+    async def find_word(
+        self, query: str, splits: list, letters: str, edits: set = None, v: bool = False
+    ):
+        if not edits and not v:
+            edits = await self.levenshtein_dist_mapper(splits, letters)
+        for e in edits:
+            if query != e:
+                if len(e) in range(len(query) - 2, len(query) + 2) and self.find_p(
+                    query, e
+                ):
+                    print(f"Probability eval with as equal: {query} == {e}")
+                    return True
+            else:
+                print(f"Found {query} == {e}")
                 return True
-            return False
+        return (
+            await self.find_word(
+                query, splits, letters, await self.extend_mapper(edits, letters), 1
+            )
+            if not v
+            else not v
+        )
+
+    async def check_if_a_compares_b(self, a: str, b: str, un_same: str = None):
+        if a != b:
+            if len(a) < len(b):
+                return await self.check_if_a_compares_b(b, a)
+            for char in a:
+                if char not in b:
+                    un_same = char if not un_same else un_same + char
+            return await self.find_word(
+                a, [(b[:i], b[i:]) for i in range(len(b) + 1)], un_same
+            )
         return True
 
     async def find_fit_via_filename(self, record: dict, name: str = None):
-        if not name:
-            return await self.find_similarity_in_columns(record)
-        for model in self.models:
-            names = [clean_str(model.__name__), clean_str(model.__tablename__)]
-            for n in names:
-                if self.check_if_a_compares_b(name, n):
-                    return await self.find_similarity_in_columns(
-                        record, (model,), model.__name__
-                    )
+        if name:
+            for model in self.models:
+                names = [clean_str(model.__name__), clean_str(model.__tablename__)]
+                for n in names:
+                    if await self.check_if_a_compares_b(name, n):
+                        return await self.find_similarity_in_columns(
+                            record, (model,), model.__name__
+                        )
         return await self.find_similarity_in_columns(record)
 
     async def find_fit_in_model_table_values(
         self, record: dict, infer: dict, w: int = 0
     ):
         print("Infered models from columns: \n", infer)
-        if not "k" or not "m" in infer:
+        if not infer or not "k" or not "m" in infer:
             return await self.find_similarity_in_columns(record)
         from utils.stmt import read_stmt
 
@@ -46,11 +93,15 @@ class FindFitToModel:
             for d in data:
                 for k in infer["k"]:
                     for x in k.keys():
-                        if x in d and k[x] in record:
+                        if (
+                            x in d
+                            and k[x] in record
+                            and isinstance(record[k[x]], type(d[x]))
+                        ):
                             if isinstance(d[x], str):
                                 w += (
                                     1
-                                    if self.check_if_a_compares_b(
+                                    if await self.check_if_a_compares_b(
                                         clean_str(d[x]),
                                         clean_str(record[k[x]]),
                                     )
@@ -75,8 +126,8 @@ class FindFitToModel:
             for col in model.__table__.c:
                 if col.key != "id" and not col.key.endswith("ed"):
                     for k in record.keys():
-                        if k != "id" and not k.endswith("ed"):
-                            if self.check_if_a_compares_b(
+                        if k != "id" and not k.startswith(self.ts_flags):
+                            if await self.check_if_a_compares_b(
                                 clean_str(k), clean_str(col.key)
                             ):
                                 if {col.key: k} and {k: col.key} not in r["k"]:
@@ -95,7 +146,6 @@ class FindFitToModel:
                         result.append(r)
                 else:
                     result.append(r)
-        print("Models infered with values: \n", result)
         return await self.find_greatest_potential_of_exist(result, record, excpt)
 
     async def find_greatest_potential_of_exist(
@@ -142,8 +192,7 @@ class FindFitToModel:
                             and len(infer["k"]) < len(r["k"])
                         ):
                             infer = r
-        if len(infer["k"]) <= len(result) * 0.5:
-            print("Recursion taking place due to infered cols <= 0.5 of len(to-infer)")
+        if len(infer["k"]) < len(result) * 0.5:
             return await self.find_greatest_potential_of_exist(
                 result, record, (infer["m"],)
             )
@@ -200,3 +249,15 @@ class FindFitToModel:
 
 
 find_fit_model = FindFitToModel()
+
+
+""" init_row = range(len(b) + 1)
+        for i, x in enumerate(a):
+            row = [i + 1]
+            for j, y in enumerate(b):
+                inserts = init_row[j + 1] + 1
+                deletes = row[j] + 1
+                substitutes = init_row[j] + (x != y)
+                row.append(min(inserts, deletes, substitutes))
+            init_row = row
+        return init_row[-1]"""

@@ -8,13 +8,18 @@ class FileEntries:
     async def collect_file(self, data: dict, size: float = 0):
         if not data or not "data" in data or not data["data"]:
             return {"error": "No data passed for processing!"}
+        from time import time, perf_counter
+
+        start = time()
         for file in data["data"]:
             if not isinstance(file, dict):
                 raise ValueError("Error: File passed is malformed")
             file["id"] = data["id"]
             size += file["size"] / 1024 / 1024
             await proc_file.detect_process_type(file)
-        print(f"Done processing file entries with size: {size}")
+        print(
+            f"Done processing file entries with size: {size} with time :{(time() - start)}"
+        )
         return {"msg": f"success processing file entries with size: {size}"}
 
     async def add_entry_to_database(self, data: dict):
