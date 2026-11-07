@@ -50,21 +50,13 @@ def _replacer(match):
 
 
 def decode_json_objects(data: str):
-    """
-    Safely parses incoming data strings that may accidentally contain raw
-    Python datetime string representations.
-    """
     if not isinstance(data, str):
         return data
 
     from json import loads, JSONDecodeError
     from ast import literal_eval
 
-    # 1. Clean the string by replacing datetime.datetime(...) with standard string stamps
     cleaned_data = DATETIME_REGEX.sub(_replacer, data)
-
-    # 2. Standardize single quotes to double quotes if it looks like a Python dict string
-    # (ast.literal_eval can handle single quotes, but JSON requires double quotes)
     try:
         return loads(cleaned_data)
     except JSONDecodeError:
@@ -81,10 +73,40 @@ def clean_str(data: str):
     return data.lower().strip()
 
 
-def clean_data(data: dict, cleaned: dict = {}):
-    for k in data.keys():
-        if isinstance(data[k], str) and not k.startswith(("tok", "pass")):
-            cleaned[clean_str(k)] = clean_str(data[k])
+def clean_data(
+    data: dict, flag: str = None, flags: list = ["token", "password", "otp"]
+):
+    for k in data.copy().keys():
+        if k in flags:
+            if not flag or flags.index(k) > 1:
+                del data[k]
         else:
-            cleaned[clean_str(k)] = data[k]
-    return cleaned
+            data[clean_str(k)] = (
+                clean_str(data[k])
+                if isinstance(data[k], str) and k != "email"
+                else data[k]
+            )
+    return data
+
+
+db_keys = {"POSTGRES_USER", "POSTGRES_PASSWORD", "DB_HOST", "DB_URL"}
+TS_FLAGS = ("create", "update")
+
+
+from functools import wraps, partial
+from asyncio import get_running_loop
+from inspect import iscoroutinefunction
+from typing import Callable, Any
+
+
+def run_in_thread_pool(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator that converts sync funcs to async funcs to avoid blocking"""
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any):
+        if iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        loop = get_running_loop()
+        return await loop.run_in_executor(None, partial(func, *args, **kwargs))
+
+    return wrapper

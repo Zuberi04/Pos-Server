@@ -1,7 +1,16 @@
 import datetime
 from uuid import uuid4, UUID
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, CHAR
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    Float,
+    CHAR,
+    BINARY,
+)
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import relationship, DeclarativeBase
 from sqlalchemy import MetaData
@@ -45,7 +54,7 @@ class AdminUser(Base):
     )
     fullnames = Column(String(50), nullable=False)
     email = Column(String(100), nullable=False, unique=True)
-    password = Column(String(256), nullable=False, unique=True)
+    password = Column(BINARY, nullable=False, unique=True)
     otp = Column(String(256), nullable=False, unique=True)
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
@@ -65,9 +74,8 @@ class AdminUser(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k != self.__tablename__:
-                continue
-            return v.__sizeof__()
+            if k == self.__name__:
+                return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
@@ -105,9 +113,8 @@ class Inventory(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k != self.__tablename__:
-                continue
-            return v.__sizeof__()
+            if k == self.__name__:
+                return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
@@ -145,9 +152,8 @@ class Catalog(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k != self.__tablename__:
-                continue
-            return v.__sizeof__()
+            if k == self.__name__:
+                return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
@@ -179,9 +185,8 @@ class Sales(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k != self.__tablename__:
-                continue
-            return v.__sizeof__()
+            if k == self.__name__:
+                return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
@@ -240,9 +245,8 @@ class Creditors(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k != self.__tablename__:
-                continue
-            return v.__sizeof__()
+            if k == self.__name__:
+                return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
@@ -269,9 +273,8 @@ class OperationExpenses(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k != self.__tablename__:
-                continue
-            return v.__sizeof__()
+            if k == self.__name__:
+                return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
     def __repr__(self):

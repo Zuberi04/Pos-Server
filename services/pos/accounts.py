@@ -120,7 +120,7 @@ class Accounts:
         from services.analysis.graph import gen_graph
 
         return {
-            "accounts": {"debits": dr, "credits": cr},
+            "accounts": {"assets": dr, "liabilities": cr},
             "analysis": await gen_graph.collect_req_data_for_graph(procs, data),
         }
 

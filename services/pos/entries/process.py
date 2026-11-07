@@ -6,7 +6,6 @@ from utils.extras import clean_str
 
 class ProcessFile:
     def __init__(self):
-        self.extracts = ["creditor", "credited"]
         self.process_types = {
             self.process_pdfs: {
                 ".pdf",
@@ -43,7 +42,6 @@ class ProcessFile:
             data["path"].mkdir(exist_ok=True)
             data["path"] = data["path"] / f"{data['name']}"
             self.archive_file_sent(data)
-
         for k, v in self.process_types.items():
             if not callable(k):
                 raise ValueError("Error: Instance is not callable!!")
@@ -141,7 +139,7 @@ class ProcessFile:
         cursor = conn.cursor()
         procs = []
         for row in cursor.fetchall():
-            procs.append(read_stmt.read_stmt_to_dict(row))
+            procs.append(await read_stmt.read_stmt_to_dict(row))
 
         return await self.process_entries(procs, data["id"])
 
@@ -178,14 +176,12 @@ class ProcessFile:
         elif not isinstance(df, pd.DataFrame):
             res = []
             for k in df.keys():
-                print(f"Accessing key: {k}")
-                data["name"] = k if isinstance(k, str) else data["name"]
+                data["name"] = k if isinstance(k, str) and k.isalpha() else data["name"]
                 res.extend(
                     await self.process_entries(df[k].to_dict(orient="records"), data)
                 )
             print(f"Len of res: {len(res)}")
             return res
-
         return await self.process_entries(df.to_dict(orient="records"), data)
 
     async def check_zipfile_for_pk(self, data: dict):
@@ -207,12 +203,9 @@ class ProcessFile:
         run(["rm", "-rf", f"{path}"])
         return res
 
-    async def process_entries(self, data: list, entry: dict):
-        res = []
+    async def process_entries(self, data: list, entry: dict, res: list = []):
         for rec in data:
-            data = [r for r in data if r != rec]
-            if not "user_id" in rec:
-                rec["user_id"] = entry["id"]
+            rec["user_id"] = entry["id"]
             wrote = await self.process_record_find_entry(
                 rec,
                 entry["name"].split(".")[0] if "." in entry["name"] else entry["name"],
@@ -220,60 +213,52 @@ class ProcessFile:
             if not wrote:
                 raise ValueError(f"Error, failed to write to db with val: {wrote}")
             res.append(wrote)
-
         return res
 
     async def process_record_find_entry(self, record: dict, flag: str):
         from utils.rel import relshp
+        from time import sleep
 
-        infer, norm = self.find_model(record, flag)
-        wrote = await relshp.check_if_rel_is_needed(
-            self.fill_missing_v_in_n(infer["k"], record, norm), infer["m"]
-        )
+        print("Original record with value: \n", record)
+        infer, record = await self.find_model(record, flag)
+        print(f"Infered model: \n {infer} \n With model mormalized attr: \n {record}")
+        wrote = await relshp.check_if_rel_is_needed(record, infer["m"], sleep)
         if not wrote:
             raise ValueError(f"Error, wrote failed with value: {wrote}")
-        dep = self.extract_data(norm)  # extracts dependency data if found
-        if not dep:
-            return wrote
-        elif isinstance(dep, dict):
-            if "error" in dep:
-                return (wrote, dep)
-            dep = [dep]
-        norm = {k: v for k, v in norm.items() if k != dep[1]}
-        for rec in dep:
-            rec.update(wrote)
-            infer, norm = self.find_model(rec)
-            norm = self.fill_missing_v_in_n(infer["k"], record, norm)
-            w = await relshp.check_if_rel_is_needed(norm, infer["m"])
-            if not "proc_deps" in wrote:
-                wrote["proc_deps"] = [w]
+        depend = self.extract_data(record)
+        if depend:
+            if not "error" in depend:
+                tn, key = await relshp.check_if_model_contains_relations(infer["m"])
+                depend[key] = wrote["id"]
+                infer, depend = await self.find_model(depend)
+                if infer["m"].__tablename != tn:
+                    raise ValueError(
+                        f"Model inquality error from f_k: {tn} and find: {infer['m'].__tablename__}"
+                    )
+                wrote.update(await relshp.check_if_rel_is_needed(depend, infer["m"]))
             else:
-                wrote["proc_deps"].append(w)
-
+                wrote.update(depend)
         return wrote
 
     def extract_data(self, record: dict):
         for k in record.keys():
-            if k in self.extracts:
-                if not isinstance(record[k], (list, dict)):
+            if k == "extras":
+                if not isinstance(record[k], dict):
                     return {
-                        "error": f"Malformed entries passed for dependency logging with key{k}!!"
+                        "error": "service error occured!! Retry the depend data or original last entry!"
                     }
-                return (record[k], k)
+                return record[k]
         return None
 
     @staticmethod
-    def format_row_to_dict(key: tuple | list, row: tuple | list):
-        record = {}
+    def format_row_to_dict(key: tuple | list, row: tuple | list, record: dict = {}):
         if len(key) != len(row):
             raise ValueError("Error, key and rows length mismatch!!")
         keys = [clean_str(k) for k in key]
         print("Keys found with values: ", keys)
         rows = [clean_str(r) if isinstance(r, str) else r for r in row]
-
         for k in keys:
             record[k] = rows[keys.index(k)]
-
         print("Record dict created with value: \n", record)
         return record
 
@@ -284,27 +269,15 @@ class ProcessFile:
         return None
 
     @staticmethod
-    def find_model(record: dict, key: str = None):
+    async def find_model(record: dict, key: str = None):
         from utils.find_fit import find_fit_model
 
-        result = find_fit_model.find_fit_via_filename(record, key)
+        result = await find_fit_model.find_fit_via_filename(record, key)
         if not result:
             raise ValueError(
                 "Failed to find model based on record with vals:\n", record, key
             )
         return result
-
-    @staticmethod
-    def fill_missing_v_in_n(keys: tuple, record: dict, norm: dict):
-        for k in record.keys():
-            if k not in keys:
-                if not k in norm:
-                    norm[clean_str(k)] = (
-                        clean_str(record[k])
-                        if isinstance(record[k], str)
-                        else record[k]
-                    )
-        return norm
 
 
 proc_file = ProcessFile()

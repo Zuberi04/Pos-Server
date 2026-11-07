@@ -7,7 +7,7 @@ load_dotenv()
 
 # ============Global redis client=====================
 r_client = redis.Redis(
-    host="localhost",
+    host=getenv("REDIS_HOST", "localhost"),
     # password=getenv("REDIS_PASSWORD", ""),
     port=6379,
     decode_responses=True,
@@ -32,6 +32,10 @@ class RedisServices:
             if not flag
             else r_client.hget(create_user_key(key), flag)
         )
+
+    @staticmethod
+    def reset_redis():
+        return r_client.reset()
 
 
 r_service = RedisServices()

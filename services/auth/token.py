@@ -1,5 +1,4 @@
 import jwt
-
 from utils.extras import create_user_key
 
 
@@ -8,6 +7,7 @@ class JwtTokens:
         pass
 
     def generate_token(self, creds: dict):
+        print("Creds passed for token generation!!")
         if len(creds) > 1:
             creds["token"] = jwt.encode(
                 payload={
@@ -34,11 +34,11 @@ class JwtTokens:
                 key=create_user_key(creds["id"], "jwt"),
                 algorithms="HS512",
             )
-            return True
+            return creds
         except jwt.DecodeError or jwt.ExpiredSignatureError:
-            return False
+            return None
         except jwt.InvalidSignatureError:
-            return {"error": "Invalid token presented!!"}
+            return {"error": "Invalid token authorization passed for signing!!"}
 
     @staticmethod
     def create_expiry_ts(creds: dict):

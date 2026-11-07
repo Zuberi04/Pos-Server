@@ -1,48 +1,86 @@
 from os import getenv
-from pathlib import Path
-from sqlite3 import DatabaseError
-from contextlib import contextmanager
-
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import URL, Engine, create_engine, text
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_DIR = BASE_DIR / "pos_data"
+def collect_db_creds(creds: dict = {}):
+    from utils.extras import clean_str, db_keys
 
-DB_DIR.mkdir(parents=True, exist_ok=True)
-
-db_path = getenv("DB_URL", "pos.db")
-db_user = getenv("POSTGRES_USER", "pos")
-db_pass = getenv("POSTGRES_PASSWORD", getenv("BACKUP_PWD", ""))
-
-if not db_pass:
-    raise ValueError(
-        f"Error: failed to get config db_pass from env file with val: {db_pass}!!"
+    for k in db_keys:
+        if k:
+            creds[clean_str(k.split("_")[1])] = getenv(k, "")
+    url = URL.create(
+        "postgresql+asyncpg",
+        username=creds["user"],
+        password=creds["password"],
+        host=creds["host"],
+        database=creds["url"],
+        query={"q": "?", "t": "connect_timeout=2"},
     )
 
-try:
-    engine = create_engine(
-        f"postgres://{db_user}:{db_pass}@postgres:5432/{db_path}", echo=True
+    print(f"Postgres url: {url}")
+    return url
+
+
+def create_db_engine() -> tuple[Engine, str]:
+    echo = getenv("SQL_ECHO", "false").lower() == "true"
+    try:
+        engine = create_async_engine(
+            collect_db_creds(),
+            echo=echo,
+            pool_size=20,
+            max_overflow=10,
+            pool_recycle=800,
+            pool_pre_ping=True,
+        )
+        with engine.connect as conn:
+            conn.execute(text("SELECT 1"))
+            print("Postgres db engine ONLINE!!")
+            return (engine, "postgres")
+    except Exception as e:
+        print(f"Postgres engine OFFLINE with error: \n {str(e)}")
+        from pathlib import Path
+
+        DB_DIR = Path(__file__).resolve().parent.parent / "pos_data"
+        DB_DIR.mkdir(parents=True, exist_ok=True)
+        DB_FILE = DB_DIR / getenv("DB_URL", "pos.db")
+        return (
+            create_engine(
+                f"sqlite:///{DB_FILE}",
+                echo=echo,
+                # connect_args={"timeout": 30},
+            ),
+            "sqlite",
+        )
+
+
+from contextlib import contextmanager
+
+
+def create_session():
+    engine, typ = create_db_engine()
+    return sessionmaker(
+        bind=engine,
+        class_=AsyncSession if typ == "postgres" else Session,
+        autoflush=True,
+        expire_on_commit=False,
     )
-    print("Generated Postgres DB..!!")
-except Exception:
-    DB_FILE = DB_DIR / db_path
-    engine = create_engine(f"sqlite:///{DB_FILE}", echo=True)
 
 
-Session = sessionmaker(engine, autoflush=True, expire_on_commit=True)
+session = create_session()
 
 
 @contextmanager
 def create_db():
-    db = Session()
+    db: Session = session()
     try:
         yield db
-    except DatabaseError as e:
-        raise ValueError(f"Error: Generating db with err-value: \n\t {e}") from e
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
