@@ -76,7 +76,7 @@ class ValidateCreds:
                         if token:
                             return token
                     return await self.validate_otp(creds, stmt)
-                return None
+                return m.__tablename__
         if self.r_matches.keys() == creds.keys() and not stmt:
             return await self.sign_up_user(creds)
         return self.auth_error("non-exist")
@@ -104,6 +104,7 @@ class ValidateCreds:
 
         user[relshp.check_if_model_contains_relations(Users)[1]] = user["id"]
         del user["id"]
+        stmt = await read_stmt.read_stmt(Users, user["id"], flag="upd")
         return await read_stmt.write_items_to_db(Users, user)
 
     @staticmethod

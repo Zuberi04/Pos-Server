@@ -1,6 +1,6 @@
 import datetime
 from uuid import uuid4, UUID
-from xxlimited import Str
+
 
 from sqlalchemy import (
     Column,
@@ -62,16 +62,25 @@ class AdminUser(Base):
     updated = Column(DateTime, nullable=True)
 
     inventory_rel = relationship(
-        "Inventory", backref="admin_users", uselist=True, cascade="all, delete-orphan"
+        "Inventory",
+        backref="admin_users",
+        uselist=True,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     users_rel = relationship(
-        "Users", backref="admin_users", uselist=True, cascade="all, delete-orphan"
+        "Users",
+        backref="admin_users",
+        uselist=True,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     expense_rel = relationship(
         "OperationExpenses",
         backref="admin_users",
         uselist=True,
         cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __init__(self, **kw):
@@ -79,7 +88,7 @@ class AdminUser(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k == self.__name__:
+            if k == self.__tablename__:
                 return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
@@ -107,10 +116,18 @@ class Inventory(Base):
     updated = Column(DateTime, nullable=True)
 
     catalog_rel = relationship(
-        "Catalog", backref="inventory", cascade="all, delete-orphan", uselist=True
+        "Catalog",
+        backref="inventory",
+        cascade="all, delete-orphan",
+        uselist=True,
+        passive_deletes=True,
     )
     creditor_rel = relationship(
-        "Creditors", backref="inventory", cascade="all, delete-orphan", uselist=False
+        "Creditors",
+        backref="inventory",
+        cascade="all, delete-orphan",
+        uselist=False,
+        passive_deletes=True,
     )
 
     def __init__(self, **kw):
@@ -118,7 +135,7 @@ class Inventory(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k == self.__name__:
+            if k == self.__tablename__:
                 return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
@@ -146,10 +163,17 @@ class Catalog(Base):
     updated = Column(DateTime, nullable=True)
 
     sales_rel = relationship(
-        "Sales", backref="catalog", cascade="all, delete-orphan", uselist=True
+        "Sales",
+        backref="catalog",
+        cascade="all, delete-orphan",
+        uselist=True,
+        passive_deletes=True,
     )
     creditors_rel = relationship(
-        "Creditors", backref="catalog", cascade="all, delete-orphan"
+        "Creditors",
+        backref="catalog",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __init__(self, **kw):
@@ -157,7 +181,7 @@ class Catalog(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k == self.__name__:
+            if k == self.__tablename__:
                 return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
@@ -182,7 +206,11 @@ class Sales(Base):
     updated = Column(DateTime, nullable=True)
 
     credited_rel = relationship(
-        "Credited", backref="sales", cascade="all, delete-orphan", uselist=True
+        "Credited",
+        backref="sales",
+        cascade="all, delete-orphan",
+        uselist=True,
+        passive_deletes=True,
     )
 
     def __init__(self, **kw):
@@ -190,7 +218,7 @@ class Sales(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k == self.__name__:
+            if k == self.__tablename__:
                 return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
@@ -217,9 +245,8 @@ class Credited(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k != self.__tablename__:
-                continue
-            return v.__sizeof__()
+            if k == self.__tablename__:
+                return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
@@ -250,7 +277,7 @@ class Creditors(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k == self.__name__:
+            if k == self.__tablename__:
                 return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
@@ -278,7 +305,7 @@ class OperationExpenses(Base):
 
     def table_size(self):
         for k, v in metadata.tables.items():
-            if k == self.__name__:
+            if k == self.__tablename__:
                 return v.__sizeof__()
         return metadata.tables.__sizeof__()
 
@@ -292,7 +319,7 @@ class Users(Base):
     id = Column(GUID, primary_key=True, default=uuid4, unique=True, nullable=False)
     name = Column(String(50), nullable=False, unique=False)
     email = Column(String(50), nullable=False, unique=True)
-    password = Column(BINARY, nullable=False, unique=True)
+    password = Column(BINARY, nullable=True, unique=True)
     admin_id = Column(
         GUID,
         ForeignKey("admin_users.id", ondelete="CASCADE"),
@@ -303,6 +330,12 @@ class Users(Base):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+    def table_size(self):
+        for k, v in metadata.tables.items():
+            if k == self.__tablename__:
+                return v.__sizeof__()
+        return metadata.tables.__sizeof__()
 
     def __repr__(self):
         return f"Users: (id={self.id}, name={self.name}, email={self.email}, password={self.password}, admin_id={self.admin_id}, created={self.created}, updated={self.updated})"
