@@ -13,7 +13,7 @@ class FindFitToModel:
         return a == x or a in x
 
     @staticmethod
-    async def levenshtein_dist_mapper(splits: list, letters: str):
+    def levenshtein_dist_mapper(splits: list, letters: str):
         result = set()
         for l, r in splits:
             if r:
@@ -23,20 +23,20 @@ class FindFitToModel:
             result.update([l + c + r for c in letters])
         return result
 
-    async def extend_mapper(self, edits: set, letters: str):
+    def extend_mapper(self, edits: set, letters: str):
         return {
             e2
             for e1 in edits
-            for e2 in await self.levenshtein_dist_mapper(
+            for e2 in self.levenshtein_dist_mapper(
                 [(e1[:i], e1[i:]) for i in range(len(e1) + 1)], letters
             )
         }
 
-    async def find_word(
+    def find_word(
         self, query: str, splits: list, letters: str, edits: set = None, v: bool = False
     ):
         if not edits and not v:
-            edits = await self.levenshtein_dist_mapper(splits, letters)
+            edits = self.levenshtein_dist_mapper(splits, letters)
         for e in edits:
             if query != e:
                 if len(e) in range(len(query) - 2, len(query) + 2) and self.find_p(
@@ -48,21 +48,21 @@ class FindFitToModel:
                 print(f"Found {query} == {e}")
                 return True
         return (
-            await self.find_word(
-                query, splits, letters, await self.extend_mapper(edits, letters), 1
+            self.find_word(
+                query, splits, letters, self.extend_mapper(edits, letters), 1
             )
             if not v
             else not v
         )
 
-    async def check_if_a_compares_b(self, a: str, b: str, un_same: str = None):
+    def check_if_a_compares_b(self, a: str, b: str, un_same: str = None):
         if a != b:
             if len(a) < len(b):
-                return await self.check_if_a_compares_b(b, a)
+                return self.check_if_a_compares_b(b, a)
             for char in a:
                 if char not in b:
                     un_same = char if not un_same else un_same + char
-            return await self.find_word(
+            return self.find_word(
                 a, [(b[:i], b[i:]) for i in range(len(b) + 1)], un_same
             )
         return True
@@ -72,7 +72,7 @@ class FindFitToModel:
             for model in self.models:
                 names = [clean_str(model.__name__), clean_str(model.__tablename__)]
                 for n in names:
-                    if await self.check_if_a_compares_b(name, n):
+                    if self.check_if_a_compares_b(name, n):
                         return await self.find_similarity_in_columns(
                             record, (model,), model.__name__
                         )
@@ -101,7 +101,7 @@ class FindFitToModel:
                             if isinstance(d[x], str):
                                 w += (
                                     1
-                                    if await self.check_if_a_compares_b(
+                                    if self.check_if_a_compares_b(
                                         clean_str(d[x]),
                                         clean_str(record[k[x]]),
                                     )
@@ -127,7 +127,7 @@ class FindFitToModel:
                 if col.key != "id" and not col.key.endswith("ed"):
                     for k in record.keys():
                         if k != "id" and not k.startswith(self.ts_flags):
-                            if await self.check_if_a_compares_b(
+                            if self.check_if_a_compares_b(
                                 clean_str(k), clean_str(col.key)
                             ):
                                 if {col.key: k} and {k: col.key} not in r["k"]:

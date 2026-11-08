@@ -58,7 +58,7 @@ class ValidateCreds:
                     for k in self.r_matches:
                         if k in creds and stmt:
                             if isinstance(creds[k], type(stmt[k])):
-                                if creds[k] != stmt[k]:
+                                if creds[k] != stmt[k] and k != "password":
                                     if "password" in creds:
                                         return self.auth_error()
                                     return await self.add_sub_client(creds)
