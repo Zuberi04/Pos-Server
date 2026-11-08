@@ -1,7 +1,7 @@
 from re import compile
 
 from utils.stmt import read_stmt
-from database.models import AdminUser
+from database.models import AdminUser, Users
 from services.auth.token import auth_token
 from services.auth.otp import gen_otp
 
@@ -15,17 +15,14 @@ class ValidateCreds:
             "email": compile(r"[A-Za-z0-9\@/a-z\./a-z/]"),
             "fullnames": compile(r"[A-Za-z]"),
         }
+        self.user_m = (AdminUser, Users)
 
-    async def clean_credentials(self, creds: dict, out: bool = False):
+    async def clean_credentials(self, creds: dict):
         from utils.extras import clean_data
 
         print("Credentials received: \n", creds)
         creds = clean_data(creds, flag="auth")
-        if out:
-            for k in creds.copy().keys():
-                if not k in self.r_matches:
-                    del creds[k]
-        elif "fullnames" in creds:
+        if "fullnames" in creds:
             try:
                 del creds["token"]
             except KeyError:
@@ -40,41 +37,51 @@ class ValidateCreds:
                             }
         return await self.validate_authentication(creds)
 
+    @staticmethod
+    def auth_error(err: str = "invalid"):
+        return {"error": f"Authentication {err}"}
+
     async def validate_authentication(
         self, creds: dict | str, stmt: dict | None = None
     ):
-        stmt = await read_stmt.read_stmt(
-            AdminUser,
-            (
-                creds["email" if "email" in creds else "id"]
-                if isinstance(creds, dict)
-                else creds
-            ),
-        )
-        if not stmt:
-            try:
-                if creds["fullnames"]:
-                    return await self.sign_up_user(creds)
-            except KeyError:
-                return {"error": "Unknown user accessing system!!"}
-        elif isinstance(creds, str):
-            return None
-        elif "password" in creds and not self.hash_or_compare(
-            creds["password"].encode("utf-8", errors="replace"),
-            stmt["password"],
-        ):
-            if not "reset" or "fullnames" in creds:
-                return {"error": "Invalid user credentials passed!!"}
-        elif "password" and "reset" in creds:
-            creds["password"] = self.hash_or_compare(creds["password"])
-        elif "token" in creds:
-            token = await auth_token.validate_token(creds)
-            if token:
-                return await read_stmt.delete_unneeded_data(token)
-        return await self.validate_otp(creds, stmt)
+        for m in self.user_m:
+            stmt = await read_stmt.read_stmt(
+                m,
+                (
+                    creds["email" if "email" in creds else "id"]
+                    if isinstance(creds, dict)
+                    else creds
+                ),
+            )
+            if stmt:
+                if isinstance(creds, dict):
+                    for k in self.r_matches:
+                        if k in creds and stmt:
+                            if isinstance(creds[k], type(stmt[k])):
+                                if creds[k] != stmt[k]:
+                                    if "password" in creds:
+                                        return self.auth_error()
+                                    return await self.add_sub_client(creds)
+                            elif not self.hash_or_compare(
+                                creds[k].encode("utf-8", errors="replace"), stmt[k]
+                            ):
+                                try:
+                                    if creds["reset"]:
+                                        creds[k] = self.hash_or_compare(creds[k])
+                                        return await self.validate_otp(creds, stmt)
+                                except KeyError:
+                                    return self.auth_error()
+                    if "token" in creds:
+                        token = await auth_token.validate_token(creds)
+                        if token:
+                            return token
+                    return await self.validate_otp(creds, stmt)
+                return None
+        if self.r_matches.keys() == creds.keys() and not stmt:
+            return await self.sign_up_user(creds)
+        return self.auth_error("non-exist")
 
-    @staticmethod
-    async def validate_otp(creds: dict, stmt: dict):
+    async def validate_otp(self, creds: dict, stmt: dict):
         creds["otp"] = gen_otp.check_if_validate_or_create(creds, stmt)
         if not isinstance(creds["otp"], dict):
             return auth_token.generate_token(
@@ -91,6 +98,13 @@ class ValidateCreds:
         return auth_token.generate_token(
             await read_stmt.write_items_to_db(AdminUser, creds)
         )
+
+    async def add_sub_client(user: dict):
+        from utils.rel import relshp
+
+        user[relshp.check_if_model_contains_relations(Users)[1]] = user["id"]
+        del user["id"]
+        return await read_stmt.write_items_to_db(Users, user)
 
     @staticmethod
     def hash_or_compare(password: str | bytes, db_pass: bytes = None):

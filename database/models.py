@@ -1,5 +1,6 @@
 import datetime
 from uuid import uuid4, UUID
+from xxlimited import Str
 
 from sqlalchemy import (
     Column,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Float,
     CHAR,
     BINARY,
+    null,
 )
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import relationship, DeclarativeBase
@@ -61,6 +63,9 @@ class AdminUser(Base):
 
     inventory_rel = relationship(
         "Inventory", backref="admin_users", uselist=True, cascade="all, delete-orphan"
+    )
+    users_rel = relationship(
+        "Users", backref="admin_users", uselist=True, cascade="all, delete-orphan"
     )
     expense_rel = relationship(
         "OperationExpenses",
@@ -235,7 +240,7 @@ class Creditors(Base):
         nullable=True,
     )
     p_id = Column(
-        GUID, ForeignKey("catalog.id", ondelete="CASCADE", name="p_id"), nullable=True
+        GUID, ForeignKey("catalog.id", ondelete="CASCADE", name="p_id"), nullable=False
     )
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
@@ -279,3 +284,25 @@ class OperationExpenses(Base):
 
     def __repr__(self):
         return f"Expenses: (id={self.id}, expense={self.expense}, reason={self.reason}, user_id={self.user_id} created={self.created}, updated={self.updated})"
+
+
+class Users(Base):
+    __tablename__ = "users"
+
+    id = Column(GUID, primary_key=True, default=uuid4, unique=True, nullable=False)
+    name = Column(String(50), nullable=False, unique=False)
+    email = Column(String(50), nullable=False, unique=True)
+    password = Column(BINARY, nullable=False, unique=True)
+    admin_id = Column(
+        GUID,
+        ForeignKey("admin_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    updated = Column(DateTime, nullable=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __repr__(self):
+        return f"Users: (id={self.id}, name={self.name}, email={self.email}, password={self.password}, admin_id={self.admin_id}, created={self.created}, updated={self.updated})"

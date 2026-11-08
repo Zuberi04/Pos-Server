@@ -7,12 +7,12 @@ class OtpGeneration:
         self.keys = ["fullnames", "email"]
 
     def check_if_validate_or_create(self, creds: dict, stmt: dict = None):
-        if stmt:
+        if stmt and stmt["otp"]:
             for k in self.keys:
                 if not k in creds:
                     creds[k] = stmt[k]
             return self.validate_otp(self.create_otp(creds), stmt["otp"], creds)
-        elif not "id" in creds:
+        elif not "id" in creds and not stmt:
             return self.create_otp(creds)
         return {"error": "Invalid authentication detected!!"}
 

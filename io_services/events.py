@@ -127,3 +127,22 @@ async def accounts(sid, data: dict):
         res["ts"] = await io.timestamp()
         return await sio.emit("accounts", res, to=sid)
     return await io.generic_error(sid)
+
+
+@sio.event
+async def sub_client(sid, data: dict):
+    if not data:
+        return await sio.emit(
+            "client-err",
+            {"error": "No sub-client/user data sent!!", "ts": await io.timestamp()},
+            to=sid,
+        )
+    res = await auth_validate.clean_credentials(data)
+    if res:
+        res["ts"] = await io.timestamp()
+        return await sio.emit("client-err" if "error" in res else "added", res, to=sid)
+
+
+@sio.event
+async def clear(sid, data: dict):
+    return

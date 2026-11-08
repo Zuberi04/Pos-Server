@@ -11,7 +11,6 @@ class JwtTokens:
         if len(creds) > 1:
             creds["token"] = jwt.encode(
                 payload={
-                    "id": creds["id"],
                     "email": creds["email"],
                     "expiry": self.create_expiry_ts(creds).isoformat(),
                 },
@@ -22,12 +21,7 @@ class JwtTokens:
                 raise ValueError("Error, failed generating token!!")
         return creds
 
-    async def validate_token(
-        self,
-        creds: dict,
-    ):
-        if not creds:
-            raise ValueError("Error, no data passed for token validation!!")
+    async def validate_token(self, creds: dict):
         try:
             jwt.decode(
                 creds["token"],
