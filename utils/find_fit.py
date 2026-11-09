@@ -13,22 +13,43 @@ class FindFitToModel:
         return a == x or a in x
 
     @staticmethod
-    def levenshtein_dist_mapper(splits: list, letters: str):
+    def levenshtein_dist_mapper(splits: list, letters: str, q: str):
         result = set()
         for l, r in splits:
-            if r:
-                result.update([l + r[1:]], [l + c + r[1:] for c in letters])
-                if len(r) > 1:
-                    result.update([l + r[1] + r[0] + r[2:]])
-            result.update([l + c + r for c in letters])
+            for u in letters:
+                if not q.index(u):
+                    if r:
+                        result.update([u + l[1:] + r])
+                    result.update([u + l + r])
+                else:
+                    if len(l) != q.index(u):
+                        if len(r) != q.index(u):
+                            if len(l) > q.index(u):
+                                result.update(
+                                    [
+                                        l[: q.index(u)] + u + l[q.index(u) + 1 :] + r,
+                                        l[: q.index(u)] + u + l[q.index(u) :] + r,
+                                    ]
+                                )
+                            elif len(r) > q.index(u):
+                                result.update(
+                                    [
+                                        l + r[: q.index(u)] + u + r[q.index(u) + 1 :],
+                                        l + r[: q.index(u)] + u + r[q.index(u) :],
+                                    ]
+                                )
+                        else:
+                            result.update([l[:-1] + u + r, l + u + r])
+                    else:
+                        result.update([l + r[:-1] + u, l + r + u])
         return result
 
-    def extend_mapper(self, edits: set, letters: str):
+    def extend_mapper(self, edits: set, letters: str, query: str):
         return {
             e2
             for e1 in edits
             for e2 in self.levenshtein_dist_mapper(
-                [(e1[:i], e1[i:]) for i in range(len(e1) + 1)], letters
+                [(e1[:i], e1[i:]) for i in range(len(e1) + 1)], letters, query
             )
         }
 
@@ -36,7 +57,7 @@ class FindFitToModel:
         self, query: str, splits: list, letters: str, edits: set = None, v: bool = False
     ):
         if not edits and not v:
-            edits = self.levenshtein_dist_mapper(splits, letters)
+            edits = self.levenshtein_dist_mapper(splits, letters, query)
         for e in edits:
             if query != e:
                 if len(e) in range(len(query) - 2, len(query) + 2) and self.find_p(
@@ -49,21 +70,27 @@ class FindFitToModel:
                 return True
         return (
             self.find_word(
-                query, splits, letters, self.extend_mapper(edits, letters), 1
+                query, splits, letters, self.extend_mapper(edits, letters, query), 1
             )
             if not v
             else not v
         )
 
     def check_if_a_compares_b(self, a: str, b: str, un_same: str = None):
-        if a != b:
+        if a != b and not b in a and not a in b:
             if len(a) < len(b):
                 return self.check_if_a_compares_b(b, a)
-            for char in a:
-                if char not in b:
-                    un_same = char if not un_same else un_same + char
-            return self.find_word(
-                a, [(b[:i], b[i:]) for i in range(len(b) + 1)], un_same
+            for char in b:
+                if char in a:
+                    un_same = (
+                        a.replace(char, "").strip()
+                        if not un_same
+                        else un_same.replace(char, "").strip()
+                    )
+            return (
+                self.find_word(a, [(b[:i], b[i:]) for i in range(len(b) + 1)], un_same)
+                if un_same
+                else False
             )
         return True
 
@@ -81,6 +108,9 @@ class FindFitToModel:
     async def find_fit_in_model_table_values(
         self, record: dict, infer: dict, w: int = 0
     ):
+        "no weight => similar columns => diff model"
+        "-weight => similar columns wrong model or same model new entry"
+        "weight => possibility of belonging"
         print("Infered models from columns: \n", infer)
         if not infer or not "k" or not "m" in infer:
             return await self.find_similarity_in_columns(record)
@@ -88,114 +118,102 @@ class FindFitToModel:
 
         data = await read_stmt.read_stmt(infer["m"])
         if data:
-            if not isinstance(data, list):
-                data = [data]
+            data = [data] if not isinstance(data, list) else data
             for d in data:
-                for k in infer["k"]:
-                    for x in k.keys():
-                        if (
-                            x in d
-                            and k[x] in record
-                            and isinstance(record[k[x]], type(d[x]))
-                        ):
-                            if isinstance(d[x], str):
-                                w += (
-                                    1
-                                    if self.check_if_a_compares_b(
-                                        clean_str(d[x]),
-                                        clean_str(record[k[x]]),
-                                    )
-                                    else -1
-                                )
-            w += infer["v"]
-            if w and w < infer["v"] / len(infer["k"]):
+                for i in range(len(infer["k"])):
+                    for k in infer["k"][i].keys():
+                        if k in d and isinstance(record[infer["k"][i][k]], type(d[k])):
+                            if isinstance(d[k], str):
+                                if not self.check_if_a_compares_b(
+                                    d[k], record[infer["k"][i][k]]
+                                ):
+                                    w -= 1
+                            w += 1
+            if w < 0:
+                print(f"W: {w}")
                 return await self.find_similarity_in_columns(record, (infer["m"],))
-        print("Records before normalzation: \n", record)
+        elif not w:
+            return await self.why_exist_in_infer(record, infer)
         return await self.normalize_attr(infer, record)
+
+    async def why_exist_in_infer(self, record: dict, infer: dict):
+        nxt_inf, record = await self.find_similarity_in_columns(record, (infer["m"],))
+        return self.check_why_v_existed_toward_m(nxt_inf, infer, record)
 
     async def find_similarity_in_columns(
         self, record: dict, excpt: tuple = None, flag: str = None, result: list = []
     ):
-        for model in self.models:
-            r = {"m": model, "k": [], "v": 0}
-            if excpt and model in excpt:
-                if flag:
-                    r["v"] += 1
-                else:
-                    continue
-            for col in model.__table__.c:
-                if col.key != "id" and not col.key.endswith("ed"):
-                    for k in record.keys():
-                        if k != "id" and not k.startswith(self.ts_flags):
+        for k in record.keys():
+            if not k.endswith("id"):
+                for m in self.models:
+                    r = {"m": m, "k": [], "v": 0}
+                    if excpt and m in excpt:
+                        continue
+                    elif flag and m.__tablename__ == flag:
+                        r["v"] += 1
+                    for col in m.__table__.c:
+                        if not col.key.endswith("id") and not col.key.startswith(
+                            self.ts_flags
+                        ):
                             if self.check_if_a_compares_b(
-                                clean_str(k), clean_str(col.key)
+                                clean_str(col.key), clean_str(k)
                             ):
-                                if {col.key: k} and {k: col.key} not in r["k"]:
-                                    r["k"].append({col.key: k})
-                                    r["v"] += 1
-            if r["k"] and r["v"]:
-                if result:
-                    for i in range(len(result)):
-                        if result[i]["m"] == r["m"]:
-                            result[i]["k"].extend(
-                                [x for x in r["k"] if x not in result[i]["k"]]
-                            )
-                            r["add"] = True
-                            break
-                    if not "add" in r:
-                        result.append(r)
-                else:
-                    result.append(r)
-        return await self.find_greatest_potential_of_exist(result, record, excpt)
+                                r["k"].append({col.key: k})
+                                r["v"] += 1
+                    if r["v"] and r["k"]:
+                        if not result:
+                            result.append(r)
+                        else:
+                            for x in result:
+                                if x["m"] == r["m"]:
+                                    result = [y for y in result if y != x]
+                                    r["k"].extend(
+                                        [y for y in x["k"] if y not in r["k"]]
+                                    )
+                                    if len(r["k"]) > len(x["k"]):
+                                        r["v"] += x["v"]
+                            result.append(r)
+        print("Models found with values: \n", result)
+        return await self.find_greatest_potential_of_exist(result, record)
+
+    @staticmethod
+    def check_relshp_exist(models: list):
+        from utils.rel import relshp
+
+        for m in models:
+            if (
+                m.__tablename__
+                == relshp.check_if_model_contains_relations(
+                    models[-1 if not models.index(m) else 0]
+                )[0]
+            ):
+                return True
+        return False
 
     async def find_greatest_potential_of_exist(
-        self,
-        result: list,
-        record: dict,
-        flag: tuple = None,
-        infer: dict = None,
+        self, result: list, record: dict, infer: dict = None
     ):
-        def check_relshp_exist(models: list):
-            from utils.rel import relshp
-
-            for m in models:
-                if (
-                    m.__tablename__
-                    == relshp.check_if_model_contains_relations(
-                        models[-1 if not models.index(m) else 0]
-                    )[0]
-                ):
-                    return True
-            return False
-
         for r in result:
-            c = 0
-            if not flag or r["m"] not in flag:
-                if r["v"]:
-                    if (
-                        infer
-                        and len(infer["k"]) * 0.5 > len(r["k"])
-                        and infer["m"] != r["m"]
-                    ):
-                        if not check_relshp_exist([r["m"], infer["m"]]):
-                            infer, record = self.check_why_v_existed_toward_m(
-                                infer, r, record
-                            )
-                    else:
-                        for k in r["k"]:
-                            for x in k.keys():
-                                c += 2 if x in record else 1
-                        r["v"] *= c / len(r["k"])
-                        if (
-                            not infer
-                            or infer["v"] < r["v"]
-                            and len(infer["k"]) < len(r["k"])
-                        ):
-                            infer = r
-        if len(infer["k"]) < len(result) * 0.5:
-            return await self.find_greatest_potential_of_exist(
-                result, record, (infer["m"],)
-            )
+            if infer and infer["m"] != r["m"]:
+                if len(infer["k"]) > len(r["k"]) and not self.check_relshp_exist(
+                    [r["m"], infer["m"]]
+                ):
+                    infer, record = self.check_why_v_existed_toward_m(infer, r, record)
+            else:
+                for k in r["k"]:
+                    for x in k.keys():
+                        try:
+                            if x or x.capitalize() in record:
+                                r["v"] += r["k"].index(k) / len(r["k"]) * r["v"]
+                            else:
+                                r["v"] -= r["k"].index(k) / len(r["k"]) * r["v"]
+                        except ZeroDivisionError:
+                            if x or x.capitalize() in record:
+                                r["v"] += r["v"] / len(r["k"])
+                            else:
+                                r["v"] -= r["v"] / len(r["k"])
+            if not infer or r["v"] > infer["v"]:
+                infer = r
         return await self.find_fit_in_model_table_values(record, infer)
 
     async def normalize_attr(self, infer: dict, record: dict, norm: dict = None):
@@ -218,7 +236,7 @@ class FindFitToModel:
         for k in record.keys():
             if not k in norm:
                 norm[k] = record[k]
-        print("Norm with filled missings: \n", norm)
+        print("Normalized with filled missings: \n", norm)
         return clean_data(norm)
 
     @staticmethod
@@ -249,15 +267,3 @@ class FindFitToModel:
 
 
 find_fit_model = FindFitToModel()
-
-
-""" init_row = range(len(b) + 1)
-        for i, x in enumerate(a):
-            row = [i + 1]
-            for j, y in enumerate(b):
-                inserts = init_row[j + 1] + 1
-                deletes = row[j] + 1
-                substitutes = init_row[j] + (x != y)
-                row.append(min(inserts, deletes, substitutes))
-            init_row = row
-        return init_row[-1]"""

@@ -25,7 +25,7 @@ class FindRelationBtwData:
             print("Depends on: \n", deps)
             return await self.write_to_dependency(record, deps)
         tn, key = self.check_if_model_contains_relations(mod)
-        wrote = await self.find_belongs_to(tn, record)
+        wrote = await self.find_belongs_to(tn, record, mod)
         if not wrote or not "id" in wrote:
             raise ValueError(
                 f"Failed writing record to model: {tn} with values:\n {wrote}!!"
@@ -83,6 +83,7 @@ class FindRelationBtwData:
                                 infer["m"],
                                 m,
                             ),
+                            rel[0],
                         )
                     if infer["m"] in models:
                         models.remove(infer["m"])
@@ -93,17 +94,24 @@ class FindRelationBtwData:
                     res.append(await self.update_write_or_return(m, record))
         return res
 
-    async def find_belongs_to(self, tn: str, record: dict):
+    async def find_belongs_to(self, tn: str, record: dict, mod: Any):
         print("Table found with name: ", tn)
         if tn.endswith("ory"):
             record = est_price.calculate_cog_from_r_price(record)
         for model in self.models:
             if model.__tablename__ == tn:
-                infer, record = await find_fit_model.find_similarity_in_columns(record)
+                infer, record = await find_fit_model.find_similarity_in_columns(
+                    record, (mod,), tn
+                )
                 while infer["m"] != model:
                     print(f"Recursing due inquality model: {infer['m']}: {model}")
                     infer, record = await find_fit_model.find_similarity_in_columns(
-                        record, (infer["m"],)
+                        record,
+                        (
+                            infer["m"],
+                            mod,
+                        ),
+                        tn,
                     )
                 return await self.update_write_or_return(model, record)
         return None

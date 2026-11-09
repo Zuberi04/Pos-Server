@@ -104,7 +104,7 @@ class Inventory(Base):
     category = Column(String(50), unique=False, nullable=False)
     stock = Column(Integer, nullable=False, default=0)
 
-    amount = Column(Float, nullable=False)
+    amount = Column(Float, nullable=False, default=0)
     mode = Column(String(30), nullable=False, name="mode", default="cash")
     user_id = Column(
         GUID,
