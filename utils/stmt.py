@@ -196,5 +196,15 @@ class ReadStatements:
             else None
         )
 
+    @staticmethod
+    async def delete_user(id: str, stmt: Any):
+        from r_services.service import r_service
+
+        with create_db() as db:
+            await r_service.invalidate_cache(id)
+            db.delete(stmt)
+            db.close()
+            return {"message": "Success deleting all your data!!"}
+
 
 read_stmt = ReadStatements()

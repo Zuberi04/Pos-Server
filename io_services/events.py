@@ -39,7 +39,6 @@ async def disconnect(sid):
 
 @sio.event
 async def authenticate(sid, data: dict):
-
     if not data:
         return await sio.emit(
             "auth-error",
@@ -56,10 +55,13 @@ async def authenticate(sid, data: dict):
 
 @sio.event
 async def fetch_data(sid, data: dict):
-    if not data or await auth_validate.validate_authentication(data["id"]):
+    if not data:
         return await sio.emit("fetch-err", await io.no_data_sent(), to=sid)
+    auth = await auth_validate.validate_authentication(data["id"])
+    if not isinstance(auth, str):
+        auth["ts"] = await io.timestamp()
+        return await sio.emit("fetch-err", auth, to=sid)
     res = await q_fetch.fetch_data(data)
-    print("Res received: ", res)
     if res:
         if "columns" in res or "query" in res:
             res["ts"] = await io.timestamp()
@@ -77,8 +79,12 @@ async def fetch_data(sid, data: dict):
 
 @sio.event
 async def query_db(sid, data: dict):
-    if not data or await auth_validate.validate_authentication(data["id"]):
+    if not data:
         return await sio.emit("query-error", await io.no_data_sent(), to=sid)
+    auth = await auth_validate.validate_authentication(data["id"])
+    if not isinstance(auth, str):
+        auth["ts"] = await io.timestamp()
+        return await sio.emit("query-error", auth, to=sid)
     res = await q_fetch.collect_query(data)
     if res:
         res["ts"] = await io.timestamp()
@@ -90,8 +96,12 @@ async def query_db(sid, data: dict):
 
 @sio.event
 async def record_entry(sid, data: dict):
-    if not data or await auth_validate.validate_authentication(data["id"]):
+    if not data:
         return await sio.emit("entry-error", await io.no_data_sent(), to=sid)
+    auth = await auth_validate.validate_authentication(data["id"])
+    if not isinstance(auth, str):
+        auth["ts"] = await io.timestamp()
+        return await sio.emit("entry-error", auth, to=sid)
     res = await entries.add_entry_to_database(data)
     if res:
         return await sio.emit(
@@ -107,8 +117,12 @@ async def record_entry(sid, data: dict):
 
 @sio.event
 async def file_entry(sid, data: dict):
-    if not data or await auth_validate.validate_authentication(data["id"]):
+    if not data:
         return await sio.emit("file-error", await io.no_data_sent(), to=sid)
+    auth = await auth_validate.validate_authentication(data["id"])
+    if not isinstance(auth, str):
+        auth["ts"] = await io.timestamp()
+        return await sio.emit("file-error", auth, to=sid)
     res = await entries.collect_file(data)
     if res:
         res["ts"] = await io.timestamp()
@@ -120,10 +134,39 @@ async def file_entry(sid, data: dict):
 
 @sio.event
 async def accounts(sid, data: dict):
-    if not data or await auth_validate.validate_authentication(data["id"]):
+    if not data:
         return await sio.emit("accounts-err", await io.no_data_sent(), to=sid)
-    res = await q_fetch.fetch_user_profile(data)
+    auth = await auth_validate.validate_authentication(data["id"])
+    if not isinstance(auth, str):
+        auth["ts"] = await io.timestamp()
+        return await sio.emit("accounts-err", auth, to=sid)
+    res = await q_fetch.fetch_user_profile(data, auth)
     if res:
         res["ts"] = await io.timestamp()
         return await sio.emit("accounts", res, to=sid)
     return await io.generic_error(sid)
+
+
+@sio.event
+async def sub_client(sid, data: dict):
+    if not data:
+        return await sio.emit(
+            "client-err",
+            {"error": "No sub-client/user data sent!!", "ts": await io.timestamp()},
+            to=sid,
+        )
+    res = await auth_validate.clean_credentials(data)
+    if res:
+        res["ts"] = await io.timestamp()
+        return await sio.emit("client-err" if "error" in res else "added", res, to=sid)
+
+
+@sio.event
+async def clear(sid, data: dict):
+    auth = await auth_validate.clean_credentials(data)
+    if "error" in auth:
+        auth["ts"] = await io.timestamp()
+        return await sio.emit("clear-err", auth, to=sid)
+    res = await q_fetch.clear(data if "key" in data else data["id"])
+    res["ts"] = await io.timestamp()
+    return await sio.emit("clear-err" if "error" in res else "cleared", res, to=sid)

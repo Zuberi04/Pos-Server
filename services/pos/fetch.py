@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from utils.stmt import read_stmt
@@ -146,13 +147,18 @@ class FetchQueryData:
         return await self.clean_data_for_response(res, data)
 
     @staticmethod
-    async def fetch_user_profile(data: dict, res: dict = {"me": None, "data": None}):
-        from database.models import AdminUser
+    async def fetch_user_profile(
+        data: dict, auth: str, res: dict = {"me": None, "data": None}
+    ):
+        from database.models import AdminUser, Users
         from services.pos.accounts import accounts
 
-        res["me"] = await read_stmt.read_stmt(AdminUser, query=data["id"])
+        res["me"] = await read_stmt.read_stmt(
+            AdminUser if auth != "users" else Users, query=data["id"]
+        )
         if res["me"]:
-            res["data"] = await accounts.collect_data_to_process(data)
+            if auth != "users":
+                res["data"] = await accounts.collect_data_to_process(data)
             return res
         return {"error": "Failed to fetch any data regarding to you..."}
 
@@ -179,6 +185,25 @@ class FetchQueryData:
                     ]
                 }
         return {"error": "could not find suggested data entry!!"}
+
+    async def clear(self, data: str | dict):
+        if not isinstance(data, str):
+            for m in self.models:
+                stmt = await read_stmt.read_stmt(m, data["key"], flag="upd")
+                if stmt:
+                    return await read_stmt.delete_user(data["id"], stmt)
+            from database.models import Users
+
+            stmt = await read_stmt.read_stmt(Users, data["key"], flag="upd")
+            if stmt:
+                return await read_stmt.delete_user(data["id"], stmt)
+        else:
+            from database.models import AdminUser
+
+            stmt = read_stmt.read_stmt(AdminUser, data, flag="upd")
+            if stmt:
+                return await read_stmt.delete_user(data, stmt)
+        return {"error": "Failed to find item of deletion!!"}
 
 
 q_fetch = FetchQueryData()

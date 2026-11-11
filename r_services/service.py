@@ -34,6 +34,10 @@ class RedisServices:
         )
 
     @staticmethod
+    async def invalidate_cache(key: str):
+        return r_client.delete(create_user_key(key))
+
+    @staticmethod
     def reset_redis():
         return r_client.reset()
 
