@@ -9,8 +9,11 @@ class FindFitToModel:
         self.ts_flags = TS_FLAGS
 
     @staticmethod
-    def find_p(a: str, x: str):
-        return a == x or a in x
+    def find_p(a: str, x: str, s: str = None):
+        for c in x:
+            if c in a and a.index(c) == x.index(c):
+                s = c if not s else s + c if not c in s else s
+        return len(s) / len(a) if s else 0
 
     @staticmethod
     def levenshtein_dist_mapper(splits: list, letters: str, q: str):
@@ -44,40 +47,48 @@ class FindFitToModel:
                         result.update([l + r[:-1] + u, l + r + u])
         return result
 
-    def extend_mapper(self, edits: set, letters: str, query: str):
+    def extend_mapper(self, splits: list, letters: str, query: str):
         return {
             e2
-            for e1 in edits
+            for e1 in self.levenshtein_dist_mapper(splits, letters, query)
             for e2 in self.levenshtein_dist_mapper(
                 [(e1[:i], e1[i:]) for i in range(len(e1) + 1)], letters, query
             )
         }
 
     def find_word(
-        self, query: str, splits: list, letters: str, edits: set = None, v: bool = False
+        self, query: str, splits: list, letters: str, edits: set = None, p: float = None
     ):
-        if not edits and not v:
+        if not edits:
             edits = self.levenshtein_dist_mapper(splits, letters, query)
         for e in edits:
-            if query != e:
-                if len(e) in range(len(query) - 2, len(query) + 2) and self.find_p(
-                    query, e
-                ):
-                    print(f"Probability eval with as equal: {query} == {e}")
-                    return True
+            if query != e and not query in e or not e in query:
+                if len(e) in range(len(query) - 2, len(query) + 2):
+                    x = self.find_p(query, e)
+                    if not p or p < x:
+                        p = x
+                        splits = [(e[i:], e[:i]) for i in range(len(e) + 1)]
+                        for c in letters:
+                            if c in e:
+                                letters = letters.replace(c, "")
             else:
-                print(f"Found {query} == {e}")
+                print(f"{query} == {e}")
                 return True
+        print(f"Recursing with highest P of: {p} with unfound: {letters}")
         return (
             self.find_word(
-                query, splits, letters, self.extend_mapper(edits, letters, query), 1
+                query, splits, letters, self.extend_mapper(splits, letters, query)
             )
-            if not v
-            else not v
+            if letters and p
+            else (
+                True
+                if not letters and p > (1 / len(query)) * (len(query) * 0.75)
+                else False
+            )
         )
 
     def check_if_a_compares_b(self, a: str, b: str, un_same: str = None):
-        if a != b and not b in a and not a in b:
+        if a != b and not b in a or not a in b:
             if len(a) < len(b):
                 return self.check_if_a_compares_b(b, a)
             for char in b:
@@ -99,18 +110,13 @@ class FindFitToModel:
             for model in self.models:
                 names = [clean_str(model.__name__), clean_str(model.__tablename__)]
                 for n in names:
-                    if self.check_if_a_compares_b(name, n):
-                        return await self.find_similarity_in_columns(
-                            record, (model,), model.__name__
-                        )
+                    if name == n:
+                        return await self.find_similarity_in_columns(record, n)
         return await self.find_similarity_in_columns(record)
 
     async def find_fit_in_model_table_values(
         self, record: dict, infer: dict, w: int = 0
     ):
-        "no weight => similar columns => diff model"
-        "-weight => similar columns wrong model or same model new entry"
-        "weight => possibility of belonging"
         print("Infered models from columns: \n", infer)
         if not infer or not "k" or not "m" in infer:
             return await self.find_similarity_in_columns(record)
