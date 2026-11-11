@@ -41,42 +41,44 @@ class ValidateCreds:
     def auth_error(err: str = "invalid"):
         return {"error": f"Authentication {err}"}
 
-    async def validate_authentication(
-        self, creds: dict | str, stmt: dict | None = None
-    ):
+    async def validate_authentication(self, creds: dict, stmt: dict | None = None):
         for m in self.user_m:
             stmt = await read_stmt.read_stmt(
-                m,
-                (
-                    creds["email" if "email" in creds else "id"]
-                    if isinstance(creds, dict)
-                    else creds
-                ),
+                m, creds["email" if "email" in creds else "id"]
             )
             if stmt:
-                if isinstance(creds, dict):
-                    for k in self.r_matches:
-                        if k in creds and stmt:
-                            if isinstance(creds[k], type(stmt[k])):
-                                if creds[k] != stmt[k] and k != "password":
-                                    if "password" in creds:
-                                        return self.auth_error()
-                                    return await self.add_sub_client(creds)
-                            elif not self.hash_or_compare(
-                                creds[k].encode("utf-8", errors="replace"), stmt[k]
-                            ):
-                                try:
-                                    if creds["reset"]:
-                                        creds[k] = self.hash_or_compare(creds[k])
-                                        return await self.validate_otp(creds, stmt)
-                                except KeyError:
+                for k in self.r_matches:
+                    if k in creds and stmt:
+                        if isinstance(creds[k], type(stmt[k])):
+                            if creds[k] != stmt[k] and k != "password":
+                                if "password" in creds:
                                     return self.auth_error()
-                    if "token" in creds:
-                        token = await auth_token.validate_token(creds)
-                        if token:
-                            return token
-                    return await self.validate_otp(creds, stmt)
-                return m.__tablename__
+                                return await self.add_sub_client(creds)
+                        elif not self.hash_or_compare(
+                            creds[k].encode("utf-8", errors="replace"), stmt[k]
+                        ):
+                            try:
+                                if creds["reset"]:
+                                    creds[k] = self.hash_or_compare(creds[k])
+                                    if m.__tablename__ != "users":
+                                        return await self.validate_otp(creds, stmt)
+                                    return await auth_token.generate_token(
+                                        await read_stmt.update_db_entries(
+                                            await read_stmt.read_stmt(
+                                                m, creds["email"], flag="upd"
+                                            ),
+                                            creds,
+                                        )
+                                    )
+                            except KeyError:
+                                return self.auth_error()
+                if "token" in creds:
+                    token = await auth_token.validate_token(creds)
+                    if token:
+                        return token
+                elif m.__tablename__ == "users":
+                    return await auth_token.generate_token(creds)
+                return await self.validate_otp(creds, stmt)
         if self.r_matches.keys() == creds.keys() and not stmt:
             return await self.sign_up_user(creds)
         return self.auth_error("non-exist")
@@ -104,7 +106,6 @@ class ValidateCreds:
 
         user[relshp.check_if_model_contains_relations(Users)[1]] = user["id"]
         del user["id"]
-        stmt = await read_stmt.read_stmt(Users, user["id"], flag="upd")
         return await read_stmt.write_items_to_db(Users, user)
 
     @staticmethod
