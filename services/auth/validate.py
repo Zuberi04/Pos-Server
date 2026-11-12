@@ -101,6 +101,7 @@ class ValidateCreds:
             await read_stmt.write_items_to_db(AdminUser, creds)
         )
 
+    @staticmethod
     async def add_sub_client(user: dict):
         from utils.rel import relshp
 

@@ -111,36 +111,50 @@ class FindFitToModel:
                 names = [clean_str(model.__name__), clean_str(model.__tablename__)]
                 for n in names:
                     if name == n:
-                        return await self.find_similarity_in_columns(record, n)
+                        return await self.find_similarity_in_columns(record, flag=n)
         return await self.find_similarity_in_columns(record)
 
     async def find_fit_in_model_table_values(
         self, record: dict, infer: dict, w: int = 0
     ):
-        print("Infered models from columns: \n", infer)
-        if not infer or not "k" or not "m" in infer:
-            return await self.find_similarity_in_columns(record)
-        from utils.stmt import read_stmt
+        print("Infered model from columns: \n", infer)
+        try:
+            if infer["k"] and infer["m"]:
+                from utils.stmt import read_stmt
 
-        data = await read_stmt.read_stmt(infer["m"])
-        if data:
-            data = [data] if not isinstance(data, list) else data
-            for d in data:
-                for i in range(len(infer["k"])):
-                    for k in infer["k"][i].keys():
-                        if k in d and isinstance(record[infer["k"][i][k]], type(d[k])):
-                            if isinstance(d[k], str):
-                                if not self.check_if_a_compares_b(
-                                    d[k], record[infer["k"][i][k]]
+                data = await read_stmt.read_stmt(infer["m"])
+                if data:
+                    for d in data:
+                        for i in range(len(infer["k"])):
+                            for k in infer["k"][i].keys():
+                                if k in d and isinstance(
+                                    record[infer["k"][i][k]], type(d[k])
                                 ):
-                                    w -= 1
-                            w += 1
-            if w < 0:
-                print(f"W: {w}")
-                return await self.find_similarity_in_columns(record, (infer["m"],))
-        elif not w:
-            return await self.why_exist_in_infer(record, infer)
-        return await self.normalize_attr(infer, record)
+                                    if isinstance(d[k], str):
+                                        if not self.check_if_a_compares_b(
+                                            d[k], record[infer["k"][i][k]]
+                                        ):
+                                            w -= 1
+                                    w += 1
+                    if w:
+                        if w < 0:
+                            return await self.find_similarity_in_columns(
+                                record, (infer["m"],)
+                            )
+                        from utils.rel import upd, relshp
+
+                        if len(upd.return_keys(record.keys())) < len(
+                            upd.return_keys(self.collect_cols(infer["m"]))
+                        ):
+                            return await self.find_similarity_in_columns(
+                                record,
+                                (infer["m"],),
+                                relshp.check_if_model_contains_relations(infer["m"])[1],
+                            )
+                        return await self.normalize_attr(infer, record)
+                return await self.why_exist_in_infer(record, infer)
+        except KeyError:
+            return await self.find_similarity_in_columns(record)
 
     async def why_exist_in_infer(self, record: dict, infer: dict):
         nxt_inf, record = await self.find_similarity_in_columns(record, (infer["m"],))
@@ -155,10 +169,10 @@ class FindFitToModel:
                     r = {"m": m, "k": [], "v": 0}
                     if excpt and m in excpt:
                         continue
-                    elif flag and m.__tablename__ == flag:
-                        r["v"] += 1
                     for col in m.__table__.c:
-                        if not col.key.endswith("id") and not col.key.startswith(
+                        if flag and m.__tablename__ == flag or col.key == flag:
+                            r["v"] += 1
+                        elif not col.key.endswith("id") and not col.key.startswith(
                             self.ts_flags
                         ):
                             if self.check_if_a_compares_b(
@@ -179,45 +193,23 @@ class FindFitToModel:
                                     if len(r["k"]) > len(x["k"]):
                                         r["v"] += x["v"]
                             result.append(r)
-        print("Models found with values: \n", result)
+        print("Models found for inference: \n", result)
         return await self.find_greatest_potential_of_exist(result, record)
-
-    @staticmethod
-    def check_relshp_exist(models: list):
-        from utils.rel import relshp
-
-        for m in models:
-            if (
-                m.__tablename__
-                == relshp.check_if_model_contains_relations(
-                    models[-1 if not models.index(m) else 0]
-                )[0]
-            ):
-                return True
-        return False
 
     async def find_greatest_potential_of_exist(
         self, result: list, record: dict, infer: dict = None
     ):
         for r in result:
             if infer and infer["m"] != r["m"]:
-                if len(infer["k"]) > len(r["k"]) and not self.check_relshp_exist(
-                    [r["m"], infer["m"]]
-                ):
+                if len(infer["k"]) > len(r["k"]):
                     infer, record = self.check_why_v_existed_toward_m(infer, r, record)
             else:
                 for k in r["k"]:
                     for x in k.keys():
-                        try:
-                            if x or x.capitalize() in record:
-                                r["v"] += r["k"].index(k) / len(r["k"]) * r["v"]
-                            else:
-                                r["v"] -= r["k"].index(k) / len(r["k"]) * r["v"]
-                        except ZeroDivisionError:
-                            if x or x.capitalize() in record:
-                                r["v"] += r["v"] / len(r["k"])
-                            else:
-                                r["v"] -= r["v"] / len(r["k"])
+                        if x or x.capitalize() in record:
+                            r["v"] += r["v"] / len(r["k"])
+                        else:
+                            r["v"] -= r["v"] / len(r["k"])
             if not infer or r["v"] > infer["v"]:
                 infer = r
         return await self.find_fit_in_model_table_values(record, infer)
@@ -254,21 +246,19 @@ class FindFitToModel:
             if x not in infer["k"]:
                 for y in x.keys():
                     for col in infer["m"].__table__.c:
-                        if not col.key in record:
-                            if not col.key.endswith("id"):
-                                if x[y] in record:
-                                    if isinstance(record[x[y]], col.type.python_type):
-                                        if self.collect_cols(r_mod["m"]).index(
-                                            y
-                                        ) == self.collect_cols(infer["m"]).index(
-                                            col.key
-                                        ):
-                                            infer["k"].append({col.key: x[y]})
-                                            record[col.key] = record[x[y]]
-                                            print(
-                                                "Record after why v existed towards model: \n",
-                                                record,
-                                            )
+                        if not col.key.endswith("id") and not col.key.startswith(
+                            self.ts_flags
+                        ):
+                            if not col.key in record:
+                                if isinstance(record[x[y]], col.type.python_type):
+                                    if self.collect_cols(r_mod["m"]).index(
+                                        y
+                                    ) == self.collect_cols(infer["m"]).index(col.key):
+                                        infer["k"].append({col.key: x[y]})
+                                        print(
+                                            "Record after why v existed towards model: \n",
+                                            record,
+                                        )
         return (infer, record)
 
 

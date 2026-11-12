@@ -153,9 +153,12 @@ class FetchQueryData:
         from database.models import AdminUser, Users
         from services.pos.accounts import accounts
 
-        res["me"] = await read_stmt.read_stmt(
-            AdminUser if auth != "users" else Users, query=data["id"]
+        res["me"] = await read_stmt.delete_unneeded_data(
+            await read_stmt.read_stmt(
+                AdminUser if auth != "users" else Users, query=data["id"]
+            )
         )
+
         if res["me"]:
             if auth != "users":
                 res["data"] = await accounts.collect_data_to_process(data)
@@ -186,20 +189,29 @@ class FetchQueryData:
                 }
         return {"error": "could not find suggested data entry!!"}
 
-    async def clear(self, data: str | dict):
+    async def clear(self, data: str | dict, stmt: Any = None):
         if not isinstance(data, str):
-            for m in self.models:
-                stmt = await read_stmt.read_stmt(m, data["key"], flag="upd")
-                if stmt:
-                    return await read_stmt.delete_user(data["id"], stmt)
-            from database.models import Users
+            from database.models import Users, AdminUser
 
             stmt = await read_stmt.read_stmt(Users, data["key"], flag="upd")
             if stmt:
-                return await read_stmt.delete_user(data["id"], stmt)
-        else:
-            from database.models import AdminUser
+                if data["id"] in read_stmt.read_stmt_to_dict(stmt).values():
+                    return await read_stmt.delete_user(data["id"], stmt)
+            for m in self.models:
+                stmt = await read_stmt.read_stmt(m, data["key"], flag="upd")
+                if stmt:
+                    rec = await read_stmt.read_stmt_to_dict(stmt)
+                    if data["id"] not in rec.values():
+                        from utils.rel import relshp
 
+                        rel = relshp.check_if_model_contains_relations(m)
+                        for p in self.models:
+                            if rel[0] == p.__tablename__:
+                                if data["id"] in read_stmt.read_stmt(p, rec[rel[1]]):
+                                    return await read_stmt.delete_user(data["id"], stmt)
+                    else:
+                        return await read_stmt.delete_user(data["id"], stmt)
+        else:
             stmt = read_stmt.read_stmt(AdminUser, data, flag="upd")
             if stmt:
                 return await read_stmt.delete_user(data, stmt)

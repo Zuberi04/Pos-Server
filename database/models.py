@@ -286,7 +286,7 @@ class Creditors(Base):
 
 
 class OperationExpenses(Base):
-    __tablename__ = "expenses"
+    __tablename__ = "operation_expenses"
     metadata
 
     id = Column(GUID, primary_key=True, nullable=False, unique=True, default=uuid4)
@@ -315,10 +315,11 @@ class OperationExpenses(Base):
 
 class Users(Base):
     __tablename__ = "users"
+    metadata
 
     id = Column(GUID, primary_key=True, default=uuid4, unique=True, nullable=False)
     name = Column(String(50), nullable=False, unique=False)
-    email = Column(String(50), nullable=False, unique=True)
+    email = Column(String(100), nullable=False, unique=True)
     password = Column(BINARY, nullable=True, unique=True)
     admin_id = Column(
         GUID,

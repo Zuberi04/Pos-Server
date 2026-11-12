@@ -4,9 +4,6 @@ from subprocess import run
 
 
 class UpdateReqs:
-    """
-    Fetch requirements & Venv dir compare and using fawlty tool it maps out the used packages within the root dir an discards the rest from the req file so installation only downloads the required packages
-    """
 
     def __init__(self):
         self.dists = []
@@ -55,35 +52,29 @@ class UpdateReqs:
         for d in self.dists:
             for k in d.keys():
                 for x in self.dists:
-                    if d != x:
-                        if k in x:
-                            d[k].extend(x[k])
-                            self.dists.remove(x)
-                    elif self.dists.count(d) > 1:
+                    if k in x:
+                        d[k].extend(x[k])
                         self.dists.remove(x)
-        path = self.path / "bin"
+                    while self.dists.count(d) > 1:
+                        self.dists.remove(d)
         for dist in self.dists:
             for k in dist.keys():
-                y = self._check_usability(unused, k)
-                x = self._check_usability([p.name for p in path.iterdir()], k)
-                if isinstance(y, type(x)) or isinstance(y, int) and isinstance(x, str):
-                    if isinstance(y, int):
-                        for u in unused:
-                            if self._peruse_through_dists(dist[k], u, valid):
-                                unused.remove(u)
+                if isinstance(self._check_usability(unused, k), int):
+                    print(f"Checking dependencys for package: {k}")
+                    unused = self._peruse_through_dists(dist[k], unused)
         print(f"Length to to rm: {len(unused)}")
         return unused
 
     @staticmethod
-    def _peruse_through_dists(dist: list, u: str, valid: bool):
+    def _peruse_through_dists(dist: list, unused: list):
         from utils.extras import clean_str
 
         for x in dist:
-            for r in ("Requires-Dist: ", " ", "\n"):
-                x = clean_str(x.replace(r, ""))
-            if u in x:
-                valid = not valid
-        return valid
+            for u in unused:
+                if clean_str(x).find(u) != -1:
+                    print(f"Removing {u} due to its dependency nature in {x}")
+                    unused.remove(u)
+        return unused
 
     @staticmethod
     def _check_usability(data: list, k: str, y: int = 1):
@@ -110,7 +101,7 @@ class UpdateReqs:
             if unused:
                 for u in unused:
                     for r in reqs:
-                        if r.startswith(u):
+                        if clean_str(r).find(u) != -1:
                             reqs.remove(r)
             return reqs
 

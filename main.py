@@ -41,11 +41,12 @@ async def shut_down_services():
 
 async def initialize_app(flag: str = "start"):
     await genpwd.gen_next_pwd_l()
-    """try:
+    try:
         from setup import update_reqs
+
         update_reqs.audit_installed_pkgs()
     except Exception as exc:
-        print(f"Failed to update requirements.txt with error:\n {exc}")"""
+        print(f"Failed to update requirements.txt with error:\n {exc}")
 
     engine, typ = create_db_engine()
     if flag == "reset":
