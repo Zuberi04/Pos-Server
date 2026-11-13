@@ -2,11 +2,10 @@ from pathlib import Path
 from importlib.metadata import PackageNotFoundError, metadata
 from subprocess import run
 
+from utils.extras import clean_str
+
 
 class UpdateReqs:
-    """
-    Fetch requirements & Venv dir compare and using fawlty tool it maps out the used packages within the root dir an discards the rest from the req file so installation only downloads the required packages
-    """
 
     def __init__(self):
         self.dists = []
@@ -39,9 +38,9 @@ class UpdateReqs:
                 shell=True,
             )
         else:
-            import time
+            from time import time
 
-            m = time.time() - self.output_path.stat().st_mtime
+            m = time() - self.output_path.stat().st_mtime
             if m >= self.output_path.stat().st_mtime + (7 * 24 * 3600):
                 run(
                     f"cd {path} && fawltydeps --check-unused >> {self.output_path}",
@@ -49,41 +48,86 @@ class UpdateReqs:
                 )
         return self.update_requirements(self.output_path)
 
-    def _check_if_a_dep(self, unused: list[str], valid: bool = False):
+    def _check_if_a_dep(self, unused: list[str]):
         if not self.dists:
             raise ValueError("Failed to get dist for dependency comparison!!")
         for d in self.dists:
-            for k in d.keys():
-                for x in self.dists:
-                    if d != x:
-                        if k in x:
-                            d[k].extend(x[k])
+            for x in self.dists:
+                for k in x.keys():
+                    if k in d:
+                        d[k].extend(x[k])
+                        while x in self.dists:
                             self.dists.remove(x)
-                    elif self.dists.count(d) > 1:
-                        self.dists.remove(x)
-        path = self.path / "bin"
+        self.find_within_dependencies()
+        print("Done checking through within deps!!")
         for dist in self.dists:
             for k in dist.keys():
-                y = self._check_usability(unused, k)
-                x = self._check_usability([p.name for p in path.iterdir()], k)
-                if isinstance(y, type(x)) or isinstance(y, int) and isinstance(x, str):
-                    if isinstance(y, int):
-                        for u in unused:
-                            if self._peruse_through_dists(dist[k], u, valid):
-                                unused.remove(u)
-        print(f"Length to to rm: {len(unused)}")
+                if isinstance(self._check_usability(unused, k), int):
+                    unused = self._peruse_through_dists(dist[k], unused)
+        print(f"Length to to rm: \n{unused}")
         return unused
 
-    @staticmethod
-    def _peruse_through_dists(dist: list, u: str, valid: bool):
-        from utils.extras import clean_str
+    def find_within_dependencies(self, i: int = 0, valid: bool = False):
+        def format_q(y: str):
+            return (
+                k.split(".")[0][
+                    : (
+                        -2
+                        if k.split(".")[0][-2] == "-" and k.split(".")[0][-1].isdigit()
+                        else -1
+                    )
+                ]
+                if k.find(".") != -1
+                else k
+            )
 
+        while i in range(len(self.dists)):
+            for k in self.dists[i].keys():
+                for l in self.dists:
+                    for m in l.keys():
+                        if m.find(k) == -1:
+                            for item in l[m]:
+                                if self.compare_values(
+                                    clean_str(item), clean_str(format_q(k))
+                                ):
+                                    if k in self.dists[i]:
+                                        for item2 in self.dists[i][k]:
+                                            if not self.compare_values(
+                                                clean_str(item2), clean_str(format_q(m))
+                                            ):
+                                                valid = not valid
+                                        if valid:
+                                            print(
+                                                f"Removing {k} since its a dependecy of another {l}"
+                                            )
+                                            self.dists.remove(self.dists[i])
+                                            valid = False
+            i += 1
+
+    def _peruse_through_dists(self, dist: list, unused: list):
         for x in dist:
-            for r in ("Requires-Dist: ", " ", "\n"):
-                x = clean_str(x.replace(r, ""))
-            if u in x:
-                valid = not valid
-        return valid
+            for u in unused:
+                if self.compare_values(clean_str(x), clean_str(u)):
+                    unused.remove(u)
+        return unused
+
+    def compare_values(self, a: str, b: str):
+        if a != b:
+            if len(a) < len(b):
+                return self.compare_values(b, a)
+            elif a.find(b[:3]) != -1:
+                if not a.index(b[0]) or a[a.index(b[0]) - 1] == " ":
+                    if a.find(b[-1:-3]) != -1:
+                        a = a[a.index(b[0]) :]
+                        if (
+                            self._return_alphaed_query(a).find(
+                                self._return_alphaed_query(b)
+                            )
+                            != -1
+                        ):
+                            return True
+            return False
+        return True
 
     @staticmethod
     def _check_usability(data: list, k: str, y: int = 1):
@@ -100,18 +144,18 @@ class UpdateReqs:
             unused = r.readlines()
             if not unused:
                 raise ValueError(f"Failed to read file in path: {path}!!")
-            from utils.extras import clean_str
-
             unused = [
-                clean_str(u.replace("-", ""))[1:-1] for u in unused if u.startswith("-")
+                clean_str(self._return_alphaed_query(u))
+                for u in unused
+                if u.startswith("-")
             ]
             print(f"Length of unused: {len(unused)}")
             unused = self._check_if_a_dep(unused)
             if unused:
                 for u in unused:
                     for r in reqs:
-                        if r.startswith(u):
-                            reqs.remove(r)
+                        if self.compare_values(clean_str(r), clean_str(u)):
+                            reqs = [x for x in reqs if x != r]
             return reqs
 
     def update_requirements(self, path: Path):
@@ -133,7 +177,6 @@ class UpdateReqs:
             reqs = self._compare_deps(path, reqs)
             if not reqs:
                 raise ValueError("Error, failed to compare reqs")
-            # print(f"Requirements: {reqs}")
             req.write_text(f"{reqs[0]}\n")
             reqs = [r for r in reqs if reqs.index(r)]
             for r in reqs:

@@ -48,6 +48,8 @@ async def authenticate(sid, data: dict):
     res = await auth_validate.clean_credentials(data)
     res["ts"] = await io.timestamp()
     print("Res: ", res)
+    if "id" in res:
+        await sio.save_session(sid, {"user": res.id})
     return await sio.emit(
         "auth-error" if "error" in res else "authenticated", res, to=sid
     )
@@ -57,7 +59,7 @@ async def authenticate(sid, data: dict):
 async def fetch_data(sid, data: dict):
     if not data:
         return await sio.emit("fetch-err", await io.no_data_sent(), to=sid)
-    auth = await auth_validate.validate_authentication(data["id"])
+    auth = await io.check_if_authenticated(data["id"], sid)
     if not isinstance(auth, str):
         auth["ts"] = await io.timestamp()
         return await sio.emit("fetch-err", auth, to=sid)
@@ -81,7 +83,7 @@ async def fetch_data(sid, data: dict):
 async def query_db(sid, data: dict):
     if not data:
         return await sio.emit("query-error", await io.no_data_sent(), to=sid)
-    auth = await auth_validate.validate_authentication(data["id"])
+    auth = await io.check_if_authenticated(data["id"], sid)
     if not isinstance(auth, str):
         auth["ts"] = await io.timestamp()
         return await sio.emit("query-error", auth, to=sid)
@@ -98,7 +100,7 @@ async def query_db(sid, data: dict):
 async def record_entry(sid, data: dict):
     if not data:
         return await sio.emit("entry-error", await io.no_data_sent(), to=sid)
-    auth = await auth_validate.validate_authentication(data["id"])
+    auth = await io.check_if_authenticated(data["id"], sid)
     if not isinstance(auth, str):
         auth["ts"] = await io.timestamp()
         return await sio.emit("entry-error", auth, to=sid)
@@ -119,7 +121,7 @@ async def record_entry(sid, data: dict):
 async def file_entry(sid, data: dict):
     if not data:
         return await sio.emit("file-error", await io.no_data_sent(), to=sid)
-    auth = await auth_validate.validate_authentication(data["id"])
+    auth = await io.check_if_authenticated(data["id"], sid)
     if not isinstance(auth, str):
         auth["ts"] = await io.timestamp()
         return await sio.emit("file-error", auth, to=sid)
@@ -136,7 +138,7 @@ async def file_entry(sid, data: dict):
 async def accounts(sid, data: dict):
     if not data:
         return await sio.emit("accounts-err", await io.no_data_sent(), to=sid)
-    auth = await auth_validate.validate_authentication(data["id"])
+    auth = await io.check_if_authenticated(data["id"], sid)
     if not isinstance(auth, str):
         auth["ts"] = await io.timestamp()
         return await sio.emit("accounts-err", auth, to=sid)
@@ -163,10 +165,14 @@ async def sub_client(sid, data: dict):
 
 @sio.event
 async def clear(sid, data: dict):
-    auth = await auth_validate.clean_credentials(data)
-    if "error" in auth:
-        auth["ts"] = await io.timestamp()
-        return await sio.emit("clear-err", auth, to=sid)
-    res = await q_fetch.clear(data if "key" in data else data["id"])
-    res["ts"] = await io.timestamp()
-    return await sio.emit("clear-err" if "error" in res else "cleared", res, to=sid)
+    sess = await io.check_if_authenticated(data["id"], sid)
+    if isinstance(sess, str):
+        auth = await auth_validate.clean_credentials(data)
+        if "error" in auth:
+            auth["ts"] = await io.timestamp()
+            return await sio.emit("clear-err", auth, to=sid)
+        res = await q_fetch.clear(data if "key" in data else data["id"])
+        res["ts"] = await io.timestamp()
+        return await sio.emit("clear-err" if "error" in res else "cleared", res, to=sid)
+    sess["ts"] = await io.timestamp()
+    return await sio.emit("clear-err", sess, to=sid)

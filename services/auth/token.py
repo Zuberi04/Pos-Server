@@ -12,7 +12,7 @@ class JwtTokens:
             creds["token"] = jwt.encode(
                 payload={
                     "email": creds["email"],
-                    "expiry": self.create_expiry_ts(creds).isoformat(),
+                    "expiry": self.create_expiry_ts(creds),
                 },
                 key=create_user_key(creds["id"], "jwt"),
                 algorithm="HS512",
@@ -29,8 +29,12 @@ class JwtTokens:
                 algorithms="HS512",
             )
             return creds
-        except jwt.DecodeError or jwt.ExpiredSignatureError:
-            return None
+        except jwt.DecodeError as e:
+            raise ValueError(
+                f"Error occured decoding token with value: \n\t {e}"
+            ) from e
+        except jwt.ExpiredSignatureError:
+            return {"error": "Login to activate session token"}
         except jwt.InvalidSignatureError:
             return {"error": "Invalid token authorization passed for signing!!"}
 
@@ -39,8 +43,8 @@ class JwtTokens:
         import datetime
 
         if not "token" in creds:
-            return datetime.datetime.now() + datetime.timedelta(hours=24)
-        return datetime.datetime.now() + datetime.timedelta(hours=(24 * 30))
+            return datetime.datetime.now() + datetime.timedelta(hours=12)
+        return datetime.datetime.now() + datetime.timedelta(hours=(24 * 2))
 
 
 auth_token = JwtTokens()
