@@ -46,7 +46,7 @@ async def initialize_app(flag: str = "start"):
 
         update_reqs.audit_installed_pkgs()
     except Exception as exc:
-        print(f"Failed to update requirements.txt with error:\n {exc}")
+        raise ValueError(f"Failed to update requirements.txt with error:\n {exc}")
 
     engine, typ = create_db_engine()
     if flag == "reset":
