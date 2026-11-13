@@ -39,6 +39,7 @@ async def disconnect(sid):
 
 @sio.event
 async def authenticate(sid, data: dict):
+    print("Event authenticate called!!")
     if not data:
         return await sio.emit(
             "auth-error",
