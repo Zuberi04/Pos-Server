@@ -208,7 +208,11 @@ class ProcessFile:
             rec["user_id"] = entry["id"]
             wrote = await self.process_record_find_entry(
                 rec,
-                entry["name"].split(".")[0] if "." in entry["name"] else entry["name"],
+                clean_str(
+                    entry["name"].split(".")[0]
+                    if "." in entry["name"]
+                    else entry["name"]
+                ),
             )
             if not wrote:
                 raise ValueError(f"Error, failed to write to db with val: {wrote}")
@@ -217,12 +221,10 @@ class ProcessFile:
 
     async def process_record_find_entry(self, record: dict, flag: str):
         from utils.rel import relshp
-        from time import sleep
 
         print("Original record with value: \n", record)
         infer, record = await self.find_model(record, flag)
-        print(f"Infered model: \n {infer} \n With model mormalized attr: \n {record}")
-        wrote = await relshp.check_if_rel_is_needed(record, infer["m"], sleep)
+        wrote = await relshp.check_if_rel_is_needed(record, infer["m"])
         if not wrote:
             raise ValueError(f"Error, wrote failed with value: {wrote}")
         depend = self.extract_data(record)
@@ -245,7 +247,7 @@ class ProcessFile:
             if k == "extras":
                 if not isinstance(record[k], dict):
                     return {
-                        "error": "service error occured!! Retry the depend data or original last entry!"
+                        "error": "service error occured!! Retry the dependency data or original last entry!"
                     }
                 return record[k]
         return None

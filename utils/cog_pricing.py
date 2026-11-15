@@ -1,9 +1,4 @@
-import time
-
-
 class EstimateCOG:
-    "C.O.G: assumption being that a p  makes a max profit of 200% of its 100% sale. Thus C.O.G can be calculated from its R.P"
-
     def __init__(self):
         self.eff = {"max": 2.00, "min": 1.00}
 

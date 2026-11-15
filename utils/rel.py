@@ -3,7 +3,7 @@ from typing import Any
 
 from utils.find_fit import find_fit_model
 from utils.stmt import read_stmt
-from utils.extras import MODELS
+from utils.extras import MODELS, TS_FLAGS
 from utils.cog_pricing import est_price
 
 
@@ -12,7 +12,7 @@ class FindRelationBtwData:
         self.models = MODELS
         self.user_rel_m = ("inventory", "expense", "operation")
 
-    async def check_if_rel_is_needed(self, record: dict, mod: Any, sleep: Any):
+    async def check_if_rel_is_needed(self, record: dict, mod: Any):
         if mod.__name__.endswith("tory") and not "amount" in record:
             record = est_price.calculate_cog_from_r_price(record)
         exist = await self.check_if_relshp_v_exist(mod, record)
@@ -151,19 +151,19 @@ class FindRelationBtwData:
 
 
 relshp = FindRelationBtwData()
-from time import sleep
 
 
 class FindUpdate:
     def __init__(self):
         self.models = MODELS
-        self.ts_flags = ("update", "create")
+        self.ts_flags = TS_FLAGS
         self.user_flags = ("users", "admins")
         self.tn_flags = ("catalog", "product")
         self.f_keys: dict = None
-        self.collect_foreign_keys()
 
-    def collect_foreign_keys(self):
+    def collect_foreign_keys(
+        self,
+    ):
         for m in self.models:
             rel = relshp.check_if_model_contains_relations(m)
             if rel:
@@ -180,192 +180,23 @@ class FindUpdate:
             k for k in keys if not k.endswith("id") and not k.startswith(self.ts_flags)
         }
 
-    async def find_update_values(
-        self,
-        record: dict,
-        prev: dict,
-        tn: str,
-        inqs: dict[str, str] = None,
-    ):
-        print(
-            f"Checking update for {tn} with prev record: \n {prev}\n And to update record: \n{record}"
-        )
-        inqs = {}
-        for k in record.keys():
-            if k != "id" and not k.startswith(self.ts_flags):
-                if k in prev and prev[k] != record[k] and not k in inqs:
-                    if isinstance(prev[k], (float, int)):
-                        linear = self.check_linear_update(prev[k], record[k])
-                        if not isinstance(linear, str):
-                            occur = await self.find_how_update_occurs(prev, tn, record)
-                            if occur and occur in linear:
-                                if (
-                                    not tn.startswith(self.tn_flags)
-                                    or k.find("price") != -1
-                                ):
-                                    inqs[k] = linear[occur]
-                        else:
-                            return linear
-                    else:
-                        inqs[k] = "rep"
-        return inqs
-
-    async def find_parent(self, record: dict, model: Any):
-        print("Record found to be: \n", record)
-        for m in self.models:
-            if m != model:
-                rel = relshp.check_if_model_contains_relations(m)
-                if rel[0] == model.__tablename__:
-                    if rel[1] not in [col.key for col in m.__table__.c]:
-                        return await read_stmt.read_stmt(m, record[rel[1]])
-        print("Checking through foreign keys due to no parent existence from models")
-        for k in self.f_keys:
-            if model.__tablename__ in self.f_keys[k]:
-                return await read_stmt.read_stmt(model, record[k])
-        return print("Found No condition matching parent attribute!!")
-
     async def check_if_update(self, record: dict, model: Any, tn: str):
         print(f"Beginning update check on {tn}....")
         exist = await read_stmt.check_if_update_or_new_entry(record, model)
         if exist:
             prev = await read_stmt.read_stmt_to_dict(exist)
             if self.check_inequality(prev, record):
-                inqs = await self.find_update_values(
-                    record, await read_stmt.read_stmt_to_dict(exist), tn
-                )
+                inqs = await self.find_how_update_occurs_btw_prev_nxt(prev, record, tn)
                 if inqs:
                     print("Inquired updates: \n", inqs)
                     if not isinstance(inqs, str):
-                        if "id" in inqs:
-                            return inqs
                         for k in record.keys():
-                            if k in inqs:
-                                if isinstance(inqs[k], str):
-                                    if len(inqs[k]) == 1 and not isinstance(
-                                        record[k], str
-                                    ):
-                                        record[k] = inqs[k] + str(record[k])
+                            if k in inqs and not isinstance(record[k], str):
+                                record[k] = inqs[k] + str(record[k])
                         print(f"Updating model: {tn} with values: \n {record}")
                     return (exist, record)
             return prev
         return None
-
-    async def find_how_update_occurs(self, prev: dict, tn: str, nxt: dict):
-        print("Finding how update occurs...")
-        for m in self.models:
-            if (
-                m.__tablename__ != tn
-                and relshp.check_if_model_contains_relations(m)[0] == tn
-            ):
-                print(f"Checking if child-table was updated for table: {tn}")
-                return await self.check_if_child_updated(
-                    await read_stmt.read_stmt(m, prev["id"]), nxt, prev, m.__tablename__
-                )
-        return None
-
-    async def check_if_child_updated(
-        self, records: list, act: dict, prev: dict, tn: str, recursed: bool = False
-    ):
-        print(f"Checking if child is updated with records: \n {records}")
-        if records:
-            records = [records] if not isinstance(records, list) else records
-            for r in records:
-                for k in r.keys():
-                    if (
-                        not k.endswith("id")
-                        and not k.startswith(self.ts_flags)
-                        and k in act
-                        and isinstance(r[k], str)
-                        and r[k] == act[k]
-                    ):
-                        if not r["updated"] and not r["created"]:
-                            raise ValueError(
-                                f"Malformed db entries in table with data: \n {r}"
-                            )
-                        elif self.check_inequality(prev, act, r):
-                            if self.compare_ts(r, prev):
-                                return await self.check_manner_of_upd_from_child(
-                                    r, act, tn
-                                )
-                            for f in self.f_keys.keys():
-                                if f in r:
-                                    return await self.find_if_parent_data_incs_excpt_of_key(
-                                        self.f_keys[f], act, prev if recursed else r
-                                    )
-        return None
-
-    async def find_if_parent_data_incs_excpt_of_key(
-        self, table_names: list, act: dict, prev: dict
-    ) -> str | None:
-        for tn in table_names:
-            for m in self.models:
-                if m.__tablename__ == tn:
-                    for c in m.__table__.c:
-                        if not c.foreign_keys and c.key in act:
-                            if not tn.startswith(self.tn_flags) and not tn.startswith(
-                                ("inven", "sal")
-                            ):
-                                if not tn.startswith(self.user_flags):
-                                    raise ValueError(
-                                        f"Invalid model passed as parent with tablename: {tn} "
-                                    )
-                            return await self.check_if_record_exist_in_rel(m, act, prev)
-        return None
-
-    async def check_if_record_exist_in_rel(
-        self, model: Any, act: dict, prev: dict
-    ) -> str:
-        print(
-            f"Checking relship btw parent of {model.__name__} and its relative model..."
-        )
-        p_rec = await self.find_parent(prev, model)
-        if not p_rec:
-            raise ValueError(f"Failed to find any parent model with data: \n {prev}")
-
-        for m in self.models:
-            if m != model:
-                rel = relshp.check_if_model_contains_relations(model)
-                if rel[1] in self.f_keys and m.__tablename__ in self.f_keys[rel[1]]:
-                    records = await read_stmt.read_stmt(m, prev["id"])
-                    if records:
-                        for r in records:
-                            for k in r.keys():
-                                if (
-                                    not k.endswith("id")
-                                    and not k.startswith(self.ts_flags)
-                                    and isinstance(r[k], str)
-                                ):
-                                    if k in act and act[k] == r[k]:
-                                        print(f"Found data within query...\n{r}")
-                                        if self.compare_ts(r, p_rec):
-                                            if (
-                                                self.compare_ts(r, prev)
-                                                or self.compare_ts(prev, p_rec)
-                                                or r[rel[1]] in act.values()
-                                            ):
-                                                return "deduct"
-                                            return "add"
-                                        elif (
-                                            self.compare_ts(prev, p_rec)
-                                            or self.compare_ts(r, prev)
-                                            and r[rel[1]] in act.values()
-                                        ):
-                                            return "deduct"
-                                        return "add"
-        return "add"
-
-    def check_inequality(self, p_rec: dict, nxt: dict, c_rec: dict = None):
-        for k in nxt.keys():
-            if not k.endswith("id") and not k.startswith(self.ts_flags):
-                if (
-                    k in p_rec
-                    and p_rec[k] != nxt[k]
-                    or c_rec
-                    and k in c_rec
-                    and c_rec[k] != nxt[k]
-                ):
-                    return True
-        return False
 
     @staticmethod
     def compare_ts(r: dict, p_rec: dict):
@@ -376,29 +207,98 @@ class FindUpdate:
             return True
         return False
 
-    async def check_manner_of_upd_from_child(self, upd: dict, record: dict, tn: str):
-        for k in upd.keys():
-            if isinstance(upd[k], str) and k.endswith("id"):
-                for m in self.models:
-                    if (
-                        m.__tablename__ != tn
-                        and tn == relshp.check_if_model_contains_relations(m)[0]
-                    ):
-                        return self.check_if_child_updated(
-                            await read_stmt.read_stmt(m, upd[k]),
-                            record,
-                            upd,
-                            m.__tablename__,
-                        )
-        return None
+    def find_equality_of_keys(self, prev: dict, record: dict) -> str | tuple[str]:
+        if prev.keys() != record.keys():
+            if "id" in record and record["id"] == prev["id"]:
+                if len(prev.keys) > len(record.keys()):
+                    return ("deduct", "child")
+                return ("update", "parent")
+            elif self.return_keys(prev.keys()) != self.return_keys(record.keys()):
+                if len(prev.keys) > len(record.keys()):
+                    return ("update", "child")
+            return ("update", "parent")
+        return "replace"
+
+    async def find_how_update_occurs_btw_prev_nxt(self, prev: dict, nxt: dict, tn: str):
+        print("finding how update occurs based on previous entry!!")
+        form = self.find_equality_of_keys(prev, nxt)
+        if not isinstance(form, str):
+            upd: Any = None
+            for m in self.models:
+                if form[-1] != "child":
+                    if relshp.check_if_model_contains_relations(m)[1] in m.__table__.c:
+                        upd = await read_stmt.check_if_update_or_new_entry(m, nxt)
+                elif tn == relshp.check_if_model_contains_relations(m)[0]:
+                    upd = await read_stmt.check_if_update_or_new_entry(m, nxt)
+                elif upd:
+                    return await self.find_how_update_occurs_btw_prev_nxt_if_extra(
+                        nxt, prev, form, await read_stmt.read_stmt(upd)
+                    )
+            return await self.find_how_update_occurs_btw_prev_nxt_if_extra(
+                nxt, prev, form
+            )
+        return form
+
+    async def find_how_update_occurs_btw_prev_nxt_if_extra(
+        self, record: dict, prev: dict, form: tuple, extra: dict = None
+    ):
+        res: dict = {}
+        print("Checking update in 3->l rel...")
+        for k in prev.keys():
+            if k in record and isinstance(record[k], type(prev[k])):
+                if isinstance(prev[k], (float, int)):
+                    l = self.check_linear_update(prev[k], record[k])
+                    if extra:
+                        if k in extra and isinstance(record[k], type(extra[k])):
+                            x = self.check_linear_update(extra[k], record[k])
+                            if x != l:
+                                if isinstance(x, type(l)):
+                                    if not isinstance(x, str):
+                                        l = l + x
+                                    else:
+                                        l = (l, x)
+                                else:
+                                    if isinstance(l, tuple) and isinstance(x, str):
+                                        l = l + (x,)
+                                    elif isinstance(x, tuple) and isinstance(l, str):
+                                        l = x + (l,)
+                    res[k] = self.compare_form_with_linear(l, form)
+        return res
 
     @staticmethod
-    def check_linear_update(act: int | float, inc: int | float) -> str | dict[str]:
+    def compare_form_with_linear(l: tuple, form: tuple):
+        for x in l:
+            if x in form:
+                if x != "update":
+                    return "-"
+                return "+"
+        raise ValueError(
+            f"Failed to find update value from compares: \n {l} and \n {form}"
+        )
+
+    def check_inequality(self, p_rec: dict, nxt: dict, c_rec: dict = None):
+        for k in nxt.keys():
+            if not k.endswith("id") and not k.startswith(self.ts_flags):
+                if k in p_rec:
+                    if isinstance(nxt[k], type(p_rec)) and p_rec[k] != nxt[k]:
+                        return True
+                elif c_rec and k in c_rec:
+                    if isinstance(nxt[k], type(c_rec[k])) and c_rec[k] != nxt[k]:
+                        return True
+        return False
+
+    @staticmethod
+    def check_linear_update(
+        act: int | float, inc: int | float, l: int = 100
+    ) -> str | tuple[str]:
         if inc:
-            if 0.1 * act <= inc <= act * 2.0:
-                if 0.7 * act > inc or inc > act * 1.3:
-                    return {"add": "+", "deduct": "-"}
-        return "replace"
+            if act:
+                move = inc / act * l
+                if move > l:
+                    return ("replace", "update")
+                return ("replace", "deduct")
+            return "update"
+        return "conflict"
 
     async def find_user_id(self, record: dict):
         if not self.f_keys:

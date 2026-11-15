@@ -1,12 +1,11 @@
 from pathlib import Path
-from importlib.metadata import PackageNotFoundError, metadata
+from importlib.metadata import PackageNotFoundError, requires, metadata
 from subprocess import run
+
+from utils.extras import clean_str
 
 
 class UpdateReqs:
-    """
-    Fetch requirements & Venv dir compare and using fawlty tool it maps out the used packages within the root dir an discards the rest from the req file so installation only downloads the required packages
-    """
 
     def __init__(self):
         self.dists = []
@@ -14,11 +13,10 @@ class UpdateReqs:
         self.output_path.mkdir(exist_ok=True)
         self.output_path = self.output_path / "unused_pkg.txt"
         self.path = Path(__file__).parent.resolve().parent
-        if not self.path.is_dir():
-            return print("Error: Prod env failed to find root dir!! ")
-        self.path = self.path / ".venv"
-        if not Path(self.path / "pyvenv.cfg").is_file():
-            return print("Path not of virtual-env!!")
+        if self.path.is_dir():
+            self.path = self.path / ".venv"
+        elif not Path(self.path / "pyvenv.cfg").is_file():
+            raise FileNotFoundError("Venv directory does not contain env file!!")
         self.target = [
             "version",
             "name",
@@ -39,9 +37,9 @@ class UpdateReqs:
                 shell=True,
             )
         else:
-            import time
+            from time import time
 
-            m = time.time() - self.output_path.stat().st_mtime
+            m = time() - self.output_path.stat().st_mtime
             if m >= self.output_path.stat().st_mtime + (7 * 24 * 3600):
                 run(
                     f"cd {path} && fawltydeps --check-unused >> {self.output_path}",
@@ -49,41 +47,115 @@ class UpdateReqs:
                 )
         return self.update_requirements(self.output_path)
 
-    def _check_if_a_dep(self, unused: list[str], valid: bool = False):
-        if not self.dists:
-            raise ValueError("Failed to get dist for dependency comparison!!")
-        for d in self.dists:
-            for k in d.keys():
-                for x in self.dists:
-                    if d != x:
-                        if k in x:
-                            d[k].extend(x[k])
-                            self.dists.remove(x)
-                    elif self.dists.count(d) > 1:
-                        self.dists.remove(x)
-        path = self.path / "bin"
-        for dist in self.dists:
-            for k in dist.keys():
-                y = self._check_usability(unused, k)
-                x = self._check_usability([p.name for p in path.iterdir()], k)
-                if isinstance(y, type(x)) or isinstance(y, int) and isinstance(x, str):
-                    if isinstance(y, int):
-                        for u in unused:
-                            if self._peruse_through_dists(dist[k], u, valid):
-                                unused.remove(u)
-        print(f"Length to to rm: {len(unused)}")
+    def _check_if_unused_is_dep(self, unused: list[str]):
+        if self.dists:
+            self.find_within_dependencies(unused)
+            for dist in self.dists:
+                for k in dist.keys():
+                    if isinstance(self._check_usability(unused, k), int):
+                        unused = self._peruse_through_dists(dist[k], unused)
+        print(f"Length to to rm: \n{unused}")
         return unused
 
-    @staticmethod
-    def _peruse_through_dists(dist: list, u: str, valid: bool):
-        from utils.extras import clean_str
+    def find_within_dependencies(self, unused: list):
+        print(f"Dists before filtration: {len(self.dists)}")
 
+        def format_q(y: str):
+            return (
+                y.split(".")[0][
+                    : (
+                        -2
+                        if y.split(".")[0][-2] == "-"
+                        and y.split(".")[0][-1].isnumeric()
+                        else -1
+                    )
+                ]
+                if y.find(".") != -1
+                else y
+            )
+
+        for pkg in self.dists:
+            n_pkg = self.dists[
+                (
+                    self.dists.index(pkg) + 1
+                    if self.dists.index(pkg) < len(self.dists) - 1
+                    else 0
+                )
+            ]
+            if pkg != n_pkg:
+                for k, v in pkg.items():
+                    if not k in n_pkg:
+                        for x in n_pkg.keys():
+                            if v != n_pkg[x]:
+                                for deps in n_pkg[x]:
+                                    if deps in v:
+                                        for dep in v:
+                                            if deps != dep:
+                                                if self.compare_values(
+                                                    format_q(x), clean_str(dep)
+                                                ):
+                                                    v.extend(
+                                                        [
+                                                            (
+                                                                n
+                                                                if not isinstance(
+                                                                    n, list
+                                                                )
+                                                                else v.extend(n)
+                                                            )
+                                                            for n in n_pkg[x]
+                                                            if n not in v
+                                                        ]
+                                                    )
+                                                    if n_pkg in self.dists:
+                                                        self.dists.remove(n_pkg)
+                                    elif self.compare_values(
+                                        format_q(k), clean_str(deps)
+                                    ):
+                                        v.extend(
+                                            [
+                                                (
+                                                    n
+                                                    if not isinstance(n, list)
+                                                    else n_pkg[x].extend(n)
+                                                )
+                                                for n in v
+                                                if n not in n_pkg[x]
+                                            ]
+                                        )
+                                        if pkg in self.dists:
+                                            self.dists.remove(pkg)
+                            else:
+                                self.dists.remove(n_pkg)
+        return print(f"Length of dist after filtration: {len(self.dists)}")
+
+    def _peruse_through_dists(self, dist: list, unused: list):
         for x in dist:
-            for r in ("Requires-Dist: ", " ", "\n"):
-                x = clean_str(x.replace(r, ""))
-            if u in x:
-                valid = not valid
-        return valid
+            if isinstance(x, str):
+                for u in unused:
+                    if self.compare_values(clean_str(x), clean_str(u)):
+                        unused.remove(u)
+            else:
+                dist.extend(x)
+        return unused
+
+    def compare_values(self, a: str, b: str):
+        def format_a_in_form_of_b(x: str, y: str, z: str = ""):
+            for c in y:
+                z = z + c if c in x or c in ("-", "_") else z
+            return z
+
+        if len(a) >= len(b):
+            if a != b and a.find(b) == -1:
+                if a.find(b[:3]) != -1 and a.find(b[-3:]) != -1:
+                    if not a.index(b[0]) or a[a.index(b[0]) - 1] == " ":
+                        a = format_a_in_form_of_b(a[a.index(b[0]) :], b)
+                        print(f"Formatted {a} for comparing to -> {b}")
+                        if len(a) >= len(b) and a == b or a.find(b) != -1:
+                            return True
+                return False
+            return True
+        return self.compare_values(b, a)
 
     @staticmethod
     def _check_usability(data: list, k: str, y: int = 1):
@@ -100,18 +172,20 @@ class UpdateReqs:
             unused = r.readlines()
             if not unused:
                 raise ValueError(f"Failed to read file in path: {path}!!")
-            from utils.extras import clean_str
-
             unused = [
-                clean_str(u.replace("-", ""))[1:-1] for u in unused if u.startswith("-")
+                clean_str(self._return_alphaed_query(u))
+                for u in unused
+                if u.startswith("-")
             ]
             print(f"Length of unused: {len(unused)}")
-            unused = self._check_if_a_dep(unused)
+            unused = self._check_if_unused_is_dep(unused)
             if unused:
-                for u in unused:
-                    for r in reqs:
-                        if r.startswith(u):
-                            reqs.remove(r)
+                for r in reqs:
+                    for u in unused:
+                        if self.compare_values(clean_str(r), clean_str(u)):
+                            reqs = [x for x in reqs if x != r]
+                            unused = [y for y in unused if y != u]
+            print(f"Unused remaining after cleanup: {unused}")
             return reqs
 
     def update_requirements(self, path: Path):
@@ -133,19 +207,14 @@ class UpdateReqs:
             reqs = self._compare_deps(path, reqs)
             if not reqs:
                 raise ValueError("Error, failed to compare reqs")
-            # print(f"Requirements: {reqs}")
             req.write_text(f"{reqs[0]}\n")
             reqs = [r for r in reqs if reqs.index(r)]
             for r in reqs:
-                if reqs.count(r) > 1:
-                    reqs.remove(r)
-                else:
-                    with req.open("a") as w:
-                        l = w.write(f"{r}\n")
-                        if not isinstance(l, int):
-                            raise ValueError(
-                                "Error: Failed to write requirement data!!"
-                            )
+                with req.open("a") as w:
+                    l = w.write(f"{r}\n")
+                    if not isinstance(l, int):
+                        raise ValueError("Error: Failed to write requirement data!!")
+                reqs = [s for s in reqs if s != r]
             return print(
                 f"Updated requirements file with a size of: {req.stat().st_size / 1024}kb!!"
             )
@@ -191,8 +260,7 @@ class UpdateReqs:
                                 for pkg in site.iterdir():
                                     if (
                                         pkg.name not in used
-                                        and not pkg.name.startswith("_")
-                                        and not pkg.name.startswith("pip")
+                                        and not pkg.name.startswith(("_", "pip"))
                                     ):
                                         try:
                                             meta = metadata(pkg.name)
@@ -202,94 +270,82 @@ class UpdateReqs:
                                                     + ">="
                                                     + meta["Version"],
                                                     reqs,
-                                                    meta.get("Require-Dist"),
+                                                    requires(pkg.name),
                                                 )
                                         except Exception:
                                             meta = self._search_for_nxt_module(
                                                 pkg, site, used
                                             )
                                             if not isinstance(meta, list):
-                                                used = meta[len(meta) - 1]
+                                                used = meta[-1]
                                                 if not isinstance(meta[0], Path):
-                                                    if "Name" in meta[0]:
+                                                    if "Name" and "Version" in meta[0]:
                                                         reqs = self._check_if_found(
                                                             meta[0]["Name"]
                                                             + ">="
                                                             + meta[0]["Version"],
                                                             reqs,
-                                                            meta[0].get("Require-Dist"),
+                                                            requires(meta[1].name),
                                                         )
                                                         continue
                                                     else:
-                                                        pkg = meta[1]
+                                                        pkg = meta[-2]
                                                 else:
                                                     pkg = meta[0]
                                             else:
                                                 used = meta
                                             req = ">="
                                             if pkg.is_dir():
-                                                x = (
-                                                    "META"
-                                                    if pkg.name.endswith("-info")
-                                                    else "__in"
-                                                )
                                                 for p in pkg.iterdir():
                                                     if p.is_file():
-                                                        if p.name.startswith(x):
+                                                        if p.name.startswith(
+                                                            ("META", "__init__")
+                                                        ):
                                                             with p.open("r") as file:
                                                                 for l in file:
-                                                                    for (
-                                                                        t
-                                                                    ) in self.target:
-                                                                        t = (
-                                                                            (
-                                                                                "__"
-                                                                                + t
-                                                                                + "__"
-                                                                            )
-                                                                            if "_" in x
-                                                                            else t[
-                                                                                0
-                                                                            ].upper()
-                                                                            + t[1:]
-                                                                        )
-                                                                        if self._check_existence_of_x_in_y(
-                                                                            t,
-                                                                            l,
-                                                                            True,
+                                                                    if (
+                                                                        not l.isidentifier()
+                                                                    ):
+                                                                        for (
+                                                                            t
+                                                                        ) in (
+                                                                            self.target
                                                                         ):
-                                                                            if t.startswith(
+                                                                            t = (
                                                                                 (
-                                                                                    "Req",
-                                                                                    "req",
+                                                                                    "__"
+                                                                                    + t
+                                                                                    + "__"
                                                                                 )
+                                                                                if p.name.startswith(
+                                                                                    "__"
+                                                                                )
+                                                                                else t[
+                                                                                    0
+                                                                                ].upper()
+                                                                                + t[1:]
+                                                                            )
+                                                                            if self._check_existence_of_x_in_y(
+                                                                                t,
+                                                                                l,
+                                                                                True,
                                                                             ):
-                                                                                if (
-                                                                                    pkg.name
-                                                                                    in self.dists
-                                                                                ):
-                                                                                    i = self.dists.index(
-                                                                                        pkg.name
+                                                                                if t.startswith(
+                                                                                    (
+                                                                                        "Req",
+                                                                                        "req",
                                                                                     )
-                                                                                    self.dists[
-                                                                                        i
-                                                                                    ].append(
-                                                                                        l
+                                                                                ):
+                                                                                    self.add_to_dists(
+                                                                                        pkg.name,
+                                                                                        l,
                                                                                     )
                                                                                 else:
-                                                                                    self.dists.append(
-                                                                                        {
-                                                                                            pkg.name: [
-                                                                                                l
-                                                                                            ]
-                                                                                        }
+                                                                                    req = self._formart_found_item_of_req(
+                                                                                        t,
+                                                                                        l,
+                                                                                        req,
                                                                                     )
-                                                                            else:
-                                                                                req = self._formart_found_item_of_req(
-                                                                                    t,
-                                                                                    l,
-                                                                                    req,
-                                                                                )
                                                                 if (
                                                                     not req.startswith(
                                                                         (">=", "_", "-")
@@ -314,25 +370,15 @@ class UpdateReqs:
                                                                         ].isnumeric()
                                                                     ):
                                                                         reqs = self._check_if_found(
-                                                                            req,
-                                                                            reqs,
+                                                                            req, reqs
                                                                         )
-
         return reqs
 
     def _check_if_found(self, req: str, reqs: list[str], dist: str = None):
-        if dist:
-            if req.split(">=")[0] in self.dists:
-                i = self.dists.index(req.split(">=")[0])
-                self.dists[i].append(dist)
-            else:
-                self.dists.append({req.split(">=")[0]: [dist]})
-            for r in reqs:
-                r = r.split(">=")[0]
-                if r or r.lower() in dist:
-                    reqs.remove(r)
-        elif req not in reqs:
+        if req not in reqs:
             reqs.append(req)
+            if dist:
+                self.add_to_dists(clean_str(req.split(">=")[0]), dist)
         return reqs
 
     @staticmethod
@@ -348,7 +394,23 @@ class UpdateReqs:
 
     @staticmethod
     def _return_alphaed_query(x: str):
-        return "".join([char for char in x if char.isalnum()])
+        return "".join([char for char in x if char.isalnum()]).strip()
+
+    def add_to_dists(self, pkg_name: str, dist: str | list):
+        if self.dists:
+            for item in self.dists:
+                for k in item.keys():
+                    if (
+                        k.startswith(pkg_name)
+                        or pkg_name.startswith(k)
+                        and dist not in item[k]
+                    ):
+                        return (
+                            item[k].extend(dist)
+                            if not isinstance(dist, str)
+                            else item[k].append(dist)
+                        )
+        return self.dists.append({pkg_name: [dist] if isinstance(dist, str) else dist})
 
 
 update_reqs = UpdateReqs()

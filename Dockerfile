@@ -6,8 +6,9 @@ COPY requirements.txt .
 
 RUN pip install --upgrade pip
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-pip install --default-timeout=1000 -r requirements.txt
+#RUN --mount=type=cache,target=/root/.cache/pip \
+#pip install --default-timeout=1000 -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=1000 -r requirements.txt
 
 COPY . .
 

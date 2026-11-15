@@ -1,6 +1,6 @@
 import datetime
-
 from typing import Any
+
 from database.config import create_db
 from utils.extras import run_in_thread_pool, MODELS, TS_FLAGS, clean_str
 
@@ -93,6 +93,7 @@ class ReadStatements:
                 model, data, await self.read_stmt_to_dict(mod)
             )
 
+    @run_in_thread_pool
     async def update_audits(self, model, data, record: dict, prev: dict = None):
         if model in MODELS:
             from services.pos.audits import audit_log
@@ -197,13 +198,14 @@ class ReadStatements:
         )
 
     @staticmethod
+    @run_in_thread_pool
     async def delete_user(id: str, stmt: Any):
         from r_services.service import r_service
 
         with create_db() as db:
             await r_service.invalidate_cache(id)
             db.delete(stmt)
-            db.close()
+            db.commit()
             return {"message": "Success deleting all your data!!"}
 
 
