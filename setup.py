@@ -13,11 +13,10 @@ class UpdateReqs:
         self.output_path.mkdir(exist_ok=True)
         self.output_path = self.output_path / "unused_pkg.txt"
         self.path = Path(__file__).parent.resolve().parent
-        if not self.path.is_dir():
-            return print("Error: Prod env failed to find root dir!! ")
-        self.path = self.path / ".venv"
-        if not Path(self.path / "pyvenv.cfg").is_file():
-            return print("Path not of virtual-env!!")
+        if self.path.is_dir():
+            self.path = self.path / ".venv"
+        elif not Path(self.path / "pyvenv.cfg").is_file():
+            raise FileNotFoundError("Venv directory does not contain env file!!")
         self.target = [
             "version",
             "name",
@@ -48,24 +47,22 @@ class UpdateReqs:
                 )
         return self.update_requirements(self.output_path)
 
-    def _check_if_a_dep(self, unused: list[str]):
-        if not self.dists:
-            raise ValueError("Failed to get dist for dependency comparison!!")
-        self.find_within_dependencies()
-        print("Done checking through within deps!!")
-        for dist in self.dists:
-            for k in dist.keys():
-                if isinstance(self._check_usability(unused, k), int):
-                    unused = self._peruse_through_dists(dist[k], unused)
+    def _check_if_unused_is_dep(self, unused: list[str]):
+        if self.dists:
+            self.find_within_dependencies(unused)
+            for dist in self.dists:
+                for k in dist.keys():
+                    if isinstance(self._check_usability(unused, k), int):
+                        unused = self._peruse_through_dists(dist[k], unused)
         print(f"Length to to rm: \n{unused}")
         return unused
 
-    def find_within_dependencies(self, i: int = 0, count: int = 0):
+    def find_within_dependencies(self, unused: list):
+        print(f"Dists before filtration: {len(self.dists)}")
+
         def format_q(y: str):
             return (
-                y
-                if y.find(".") == -1
-                else y.split(".")[0][
+                y.split(".")[0][
                     : (
                         -2
                         if y.split(".")[0][-2] == "-"
@@ -73,57 +70,92 @@ class UpdateReqs:
                         else -1
                     )
                 ]
+                if y.find(".") != -1
+                else y
             )
 
-        while i in range(len(self.dists)):
-            for k in self.dists[i].keys():
-                for l in self.dists:
-                    if self.dists.index(l) != i:
-                        for m in l.keys():
-                            if m.find(k) == -1:
-                                for item in l[m]:
-                                    if isinstance(item, str):
-                                        if self.compare_values(
-                                            clean_str(format_q(k)), clean_str(item)
-                                        ):
-                                            count += 1
-                                            if i in range(len(self.dists)):
-                                                self.dists.remove(self.dists[i])
-                                    else:
-                                        l[m].extend(item)
+        for pkg in self.dists:
+            n_pkg = self.dists[
+                (
+                    self.dists.index(pkg) + 1
+                    if self.dists.index(pkg) < len(self.dists) - 1
+                    else 0
+                )
+            ]
+            if pkg != n_pkg:
+                for k, v in pkg.items():
+                    if not k in n_pkg:
+                        for x in n_pkg.keys():
+                            if v != n_pkg[x]:
+                                for deps in n_pkg[x]:
+                                    if deps in v:
+                                        for dep in v:
+                                            if deps != dep:
+                                                if self.compare_values(
+                                                    format_q(x), clean_str(dep)
+                                                ):
+                                                    v.extend(
+                                                        [
+                                                            (
+                                                                n
+                                                                if not isinstance(
+                                                                    n, list
+                                                                )
+                                                                else v.extend(n)
+                                                            )
+                                                            for n in n_pkg[x]
+                                                            if n not in v
+                                                        ]
+                                                    )
+                                                    if n_pkg in self.dists:
+                                                        self.dists.remove(n_pkg)
+                                    elif self.compare_values(
+                                        format_q(k), clean_str(deps)
+                                    ):
+                                        v.extend(
+                                            [
+                                                (
+                                                    n
+                                                    if not isinstance(n, list)
+                                                    else n_pkg[x].extend(n)
+                                                )
+                                                for n in v
+                                                if n not in n_pkg[x]
+                                            ]
+                                        )
+                                        if pkg in self.dists:
+                                            self.dists.remove(pkg)
                             else:
-                                l[m].extend(
-                                    [y for y in self.dists[i].values() if y not in l[m]]
-                                )
-                                self.dists.remove(self.dists[i])
-            i += 1
-        return print(
-            f"Dependecy filtered with length: {len(self.dists)} removed count of: {count}"
-        )
+                                self.dists.remove(n_pkg)
+        return print(f"Length of dist after filtration: {len(self.dists)}")
 
     def _peruse_through_dists(self, dist: list, unused: list):
         for x in dist:
-            if not isinstance(x, str):
-                dist.extend(x)
-            else:
+            if isinstance(x, str):
                 for u in unused:
                     if self.compare_values(clean_str(x), clean_str(u)):
                         unused.remove(u)
+            else:
+                dist.extend(x)
         return unused
 
     def compare_values(self, a: str, b: str):
-        if a != b:
-            if len(a) >= len(b):
-                if a.find(b[:3]) != -1 and a.find(b[-1]) != -1:
+        def format_a_in_form_of_b(x: str, y: str, z: str = ""):
+            for c in y:
+                z = z + c if c in x or c in ("-", "_") else z
+            return z
+
+        if len(a) >= len(b):
+            if a != b and a.find(b) == -1:
+                if a.find(b[:3]) != -1 and a.find(b[-3:]) != -1:
                     if not a.index(b[0]) or a[a.index(b[0]) - 1] == " ":
-                        if (
-                            a[a.index(b[0]) : a.index(b[-1])].find(b) != -1
-                            or b.find(a[a.index(b[0]) : a.index(b[-1])]) != -1
-                        ):
+                        a = format_a_in_form_of_b(a[a.index(b[0]) :], b)
+                        print(f"Formatted {a} for comparing to -> {b}")
+                        if len(a) >= len(b) and a == b or a.find(b) != -1:
                             return True
                 return False
-            return self.compare_values(b, a)
-        return True
+            return True
+        return self.compare_values(b, a)
 
     @staticmethod
     def _check_usability(data: list, k: str, y: int = 1):
@@ -146,13 +178,14 @@ class UpdateReqs:
                 if u.startswith("-")
             ]
             print(f"Length of unused: {len(unused)}")
-            unused = self._check_if_a_dep(unused)
-            print(f"Length of unused after check: {len(unused)}")
+            unused = self._check_if_unused_is_dep(unused)
             if unused:
                 for r in reqs:
                     for u in unused:
                         if self.compare_values(clean_str(r), clean_str(u)):
                             reqs = [x for x in reqs if x != r]
+                            unused = [y for y in unused if y != u]
+            print(f"Unused remaining after cleanup: {unused}")
             return reqs
 
     def update_requirements(self, path: Path):
@@ -177,15 +210,11 @@ class UpdateReqs:
             req.write_text(f"{reqs[0]}\n")
             reqs = [r for r in reqs if reqs.index(r)]
             for r in reqs:
-                if reqs.count(r) > 1:
-                    reqs.remove(r)
-                else:
-                    with req.open("a") as w:
-                        l = w.write(f"{r}\n")
-                        if not isinstance(l, int):
-                            raise ValueError(
-                                "Error: Failed to write requirement data!!"
-                            )
+                with req.open("a") as w:
+                    l = w.write(f"{r}\n")
+                    if not isinstance(l, int):
+                        raise ValueError("Error: Failed to write requirement data!!")
+                reqs = [s for s in reqs if s != r]
             return print(
                 f"Updated requirements file with a size of: {req.stat().st_size / 1024}kb!!"
             )
@@ -349,10 +378,7 @@ class UpdateReqs:
         if req not in reqs:
             reqs.append(req)
             if dist:
-                self.add_to_dists(req.split(">=")[0], dist)
-                for r in reqs:
-                    if self.compare_values(r.split(">=")[0], dist):
-                        reqs.remove(r)
+                self.add_to_dists(clean_str(req.split(">=")[0]), dist)
         return reqs
 
     @staticmethod
@@ -368,15 +394,15 @@ class UpdateReqs:
 
     @staticmethod
     def _return_alphaed_query(x: str):
-        return "".join([char for char in x if char.isalnum()])
+        return "".join([char for char in x if char.isalnum()]).strip()
 
     def add_to_dists(self, pkg_name: str, dist: str | list):
         if self.dists:
             for item in self.dists:
                 for k in item.keys():
                     if (
-                        k == pkg_name
-                        or self.compare_values(pkg_name, k)
+                        k.startswith(pkg_name)
+                        or pkg_name.startswith(k)
                         and dist not in item[k]
                     ):
                         return (
@@ -384,7 +410,7 @@ class UpdateReqs:
                             if not isinstance(dist, str)
                             else item[k].append(dist)
                         )
-        return self.dists.append({pkg_name: [dist]})
+        return self.dists.append({pkg_name: [dist] if isinstance(dist, str) else dist})
 
 
 update_reqs = UpdateReqs()

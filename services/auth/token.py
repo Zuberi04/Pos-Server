@@ -12,7 +12,7 @@ class JwtTokens:
             creds["token"] = jwt.encode(
                 payload={
                     "email": creds["email"],
-                    "expiry": self.create_expiry_ts(creds),
+                    "expiry": self.create_expiry_ts(creds).isoformat(),
                 },
                 key=create_user_key(creds["id"], "jwt"),
                 algorithm="HS512",
