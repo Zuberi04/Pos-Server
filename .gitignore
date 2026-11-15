@@ -2,23 +2,55 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+*.pyd
+*.pyc
 
-#Virtual envs
+# Virtual envs
 .venv/
 venv/
 env/
 
-#Env variables
+# Environment variables
 .env
 .env.*
 !.env.*
 
-#IDE
+# IDE/editor files
 .vscode/
 .idea/
+.DS_Store
+*.swp
+*.swo
 
-#Data logs
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Logs and runtime data
+*.log
+*.sqlite3
+*.db
 pos_data/
 services/pos/data_logs/
 sys_logs/
 services/audits/
+logs/
+backups/
+cache/
+
+# Local/generated service files
+tmp/
+temp/
+*.tmp
+*.bak
