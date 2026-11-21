@@ -1,11 +1,15 @@
 import pandas as pd
+import time
 from pathlib import Path
 
-from utils.extras import clean_str
+from utils.extras import clean_str, MODELS
 
 
 class ProcessFile:
     def __init__(self):
+        self.flags = {"move", "movement"}
+        self.models = MODELS
+        self.check = {"type": {"in": "+", "out": "-"}}
         self.process_types = {
             self.process_pdfs: {
                 ".pdf",
@@ -180,6 +184,7 @@ class ProcessFile:
                 res.extend(
                     await self.process_entries(df[k].to_dict(orient="records"), data)
                 )
+                time.sleep(60)
             print(f"Len of res: {len(res)}")
             return res
         return await self.process_entries(df.to_dict(orient="records"), data)
@@ -204,53 +209,34 @@ class ProcessFile:
         return res
 
     async def process_entries(self, data: list, entry: dict, res: list = []):
+        from setup import update_reqs
+
+        entry["name"] = update_reqs.format_q(entry["name"])
         for rec in data:
             rec["user_id"] = entry["id"]
-            wrote = await self.process_record_find_entry(
-                rec,
-                clean_str(
-                    entry["name"].split(".")[0]
-                    if "." in entry["name"]
-                    else entry["name"]
-                ),
+            for f in self.flags:
+                if (
+                    clean_str(f) == clean_str(entry["name"])
+                    or clean_str(entry["name"]).find(clean_str(f)) != -1
+                ):
+                    moved = await self.check_how_mvment_occured(rec)
+                    if moved:
+                        rec = moved
+            res.append(
+                await self.process_record_find_entry(rec, clean_str(entry["name"]))
             )
-            if not wrote:
-                raise ValueError(f"Error, failed to write to db with val: {wrote}")
-            res.append(wrote)
         return res
 
     async def process_record_find_entry(self, record: dict, flag: str):
         from utils.rel import relshp
 
-        print("Original record with value: \n", record)
-        infer, record = await self.find_model(record, flag)
-        wrote = await relshp.check_if_rel_is_needed(record, infer["m"])
-        if not wrote:
-            raise ValueError(f"Error, wrote failed with value: {wrote}")
-        depend = self.extract_data(record)
-        if depend:
-            if not "error" in depend:
-                tn, key = await relshp.check_if_model_contains_relations(infer["m"])
-                depend[key] = wrote["id"]
-                infer, depend = await self.find_model(depend)
-                if infer["m"].__tablename != tn:
-                    raise ValueError(
-                        f"Model inquality error from f_k: {tn} and find: {infer['m'].__tablename__}"
-                    )
-                wrote.update(await relshp.check_if_rel_is_needed(depend, infer["m"]))
-            else:
-                wrote.update(depend)
-        return wrote
-
-    def extract_data(self, record: dict):
-        for k in record.keys():
-            if k == "extras":
-                if not isinstance(record[k], dict):
-                    return {
-                        "error": "service error occured!! Retry the dependency data or original last entry!"
-                    }
-                return record[k]
-        return None
+        print("Original record with value: \n\t", record)
+        infer = await self.find_model(record, flag)
+        if isinstance(infer, tuple):
+            infer = await relshp.check_if_rel_is_needed(infer[1], infer[0]["m"])
+            if not infer:
+                raise ValueError(f"Error, writing to db failed failed!!")
+        return infer
 
     @staticmethod
     def format_row_to_dict(key: tuple | list, row: tuple | list, record: dict = {}):
@@ -280,6 +266,35 @@ class ProcessFile:
                 "Failed to find model based on record with vals:\n", record, key
             )
         return result
+
+    async def check_how_mvment_occured(self, record: dict):
+        if record:
+            for r in record.keys():
+                if isinstance(record[r], str) and clean_str(r) in self.check:
+                    for m in self.models:
+                        from utils.stmt import read_stmt
+
+                        upd = await read_stmt.read_stmt_to_dict(
+                            await read_stmt.check_if_update_or_new_entry(
+                                record, m, "barcode"
+                            )
+                        )
+                        if upd:
+                            for u in upd.keys():
+                                if isinstance(upd[u], int):
+                                    for v in record.keys():
+                                        if isinstance(record[v], type(upd[u])):
+                                            for w in self.check[r]:
+                                                if clean_str(record[r]) in w:
+                                                    upd[u] = int(
+                                                        upd[u]
+                                                        + float(
+                                                            w[record[r]]
+                                                            + str(record[v])
+                                                        )
+                                                    )
+                                                    return upd
+        return None
 
 
 proc_file = ProcessFile()

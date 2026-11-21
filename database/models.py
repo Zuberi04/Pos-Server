@@ -103,7 +103,6 @@ class Inventory(Base):
     id = Column(GUID, default=uuid4, unique=True, nullable=False, primary_key=True)
     category = Column(String(50), unique=False, nullable=False)
     stock = Column(Integer, nullable=False, default=0)
-
     amount = Column(Float, nullable=False, default=0)
     mode = Column(String(30), nullable=False, name="mode", default="cash")
     user_id = Column(
@@ -120,13 +119,6 @@ class Inventory(Base):
         backref="inventory",
         cascade="all, delete-orphan",
         uselist=True,
-        passive_deletes=True,
-    )
-    creditor_rel = relationship(
-        "Creditors",
-        backref="inventory",
-        cascade="all, delete-orphan",
-        uselist=False,
         passive_deletes=True,
     )
 
@@ -153,6 +145,8 @@ class Catalog(Base):
     brand = Column(String, nullable=False, name="brand")
     stock = Column(Integer, nullable=False, name="stock", default=0)
     min_stock = Column(Integer, nullable=False, default=0)
+    sku = Column(String(50), nullable=True, unique=True)
+    barcode = Column(String(50), nullable=True)
     price = Column(Float, nullable=False, name="price")
     i_id = Column(
         GUID,
@@ -186,7 +180,7 @@ class Catalog(Base):
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
-        return f"Catalog: (id={self.id}, brand={self.brand}, stock={self.stock}, min_stock={self.min_stock},price={self.price}, i_id={self.i_id}, created={self.created}, updated={self.updated})"
+        return f"Catalog: (id={self.id}, brand={self.brand}, stock={self.stock}, min_stock={self.min_stock},price={self.price}, sku={self.sku}, barcode={self.barcode}, i_id={self.i_id}, created={self.created}, updated={self.updated})"
 
 
 class Sales(Base):
@@ -261,11 +255,6 @@ class Creditors(Base):
     name = Column(String(50), nullable=False, unique=True)
     phone = Column(String(50), nullable=False, unique=True)
     amount = Column(Float, nullable=False)
-    i_id = Column(
-        GUID,
-        ForeignKey("inventory.id", ondelete="CASCADE", name="i_id"),
-        nullable=True,
-    )
     p_id = Column(
         GUID, ForeignKey("catalog.id", ondelete="CASCADE", name="p_id"), nullable=False
     )

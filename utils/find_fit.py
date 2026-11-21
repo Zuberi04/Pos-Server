@@ -1,5 +1,7 @@
 from typing import Any
+
 from utils.extras import MODELS, clean_str, clean_data, TS_FLAGS
+import time
 
 
 class FindFitToModel:
@@ -7,234 +9,213 @@ class FindFitToModel:
     def __init__(self):
         self.models = MODELS
         self.ts_flags = TS_FLAGS
+        self.l = "abcdefghijklmnopqrstuvwxyz"
 
-    @staticmethod
-    def find_p(a: str, x: str, s: str = None):
-        for c in x:
-            if c in a and a.index(c) == x.index(c):
-                s = c if not s else s + c if not c in s else s
-        return len(s) / len(a) if s else 0
+    def find_num_meaning(self, s: str, w: float = 0):
+        from cmath import sqrt
 
-    @staticmethod
-    def levenshtein_dist_mapper(splits: list, letters: str, q: str):
-        result = set()
-        for l, r in splits:
-            for u in letters:
-                if not q.index(u):
-                    if r:
-                        result.update([u + l[1:] + r])
-                    result.update([u + l + r])
-                else:
-                    if len(l) != q.index(u):
-                        if len(r) != q.index(u):
-                            if len(l) > q.index(u):
-                                result.update(
-                                    [
-                                        l[: q.index(u)] + u + l[q.index(u) + 1 :] + r,
-                                        l[: q.index(u)] + u + l[q.index(u) :] + r,
-                                    ]
-                                )
-                            elif len(r) > q.index(u):
-                                result.update(
-                                    [
-                                        l + r[: q.index(u)] + u + r[q.index(u) + 1 :],
-                                        l + r[: q.index(u)] + u + r[q.index(u) :],
-                                    ]
-                                )
+        for c in s:
+            if c in self.l and self.l.index(c):
+                if s[s.index(c) - 1] in self.l and self.l.index(s[s.index(c) - 1]):
+                    if self.l.index(s[s.index(c) - 1]) != self.l.index(c):
+                        w += sqrt(
+                            -(idx**2)
+                            if self.l.index(s[s.index(c) - 1])
+                            > (idx := self.l.index(c))
+                            else idx**2 + self.l.index(s[s.index(c) - 1]) ** 2
+                        )
+        return w
+
+    def compare_meaning_a_to_b(self, a: str, b: str):
+        return len({self.find_num_meaning(clean_str(s), 0) for s in {a, b}}) == 1
+
+    def fill_gaps(self, edit: str, missing: str, q: str):
+        while len(edit) < len(q):
+            for m in missing:
+                if m in edit:
+                    c = q.index(m) - edit.count(m)
+                    if c:
+                        if c < 0:
+                            edit = "".join([e for e in edit if e != m])
                         else:
-                            result.update([l[:-1] + u + r, l + u + r])
+                            edit = edit[: q.index(m)] + m + edit[q.index(m) :]
                     else:
-                        result.update([l + r[:-1] + u, l + r + u])
-        return result
+                        edit = self.re_arrange_edit(
+                            [(a, b) for a, b in enumerate(q) if m == b], edit
+                        )
+                else:
+                    edit = edit[: q.index(m)] + m + edit[q.index(m) :]
+        return self.re_arrange_edit([(a, b) for a, b in enumerate(q)], edit) == q
 
-    def extend_mapper(self, splits: list, letters: str, query: str):
-        return {
-            e2
-            for e1 in self.levenshtein_dist_mapper(splits, letters, query)
-            for e2 in self.levenshtein_dist_mapper(
-                [(e1[:i], e1[i:]) for i in range(len(e1) + 1)], letters, query
-            )
-        }
-
-    def find_word(
-        self, query: str, splits: list, letters: str, edits: set = None, p: float = None
-    ):
-        if not edits:
-            edits = self.levenshtein_dist_mapper(splits, letters, query)
-        for e in edits:
-            if query != e and not query in e or not e in query:
-                if len(e) in range(len(query) - 2, len(query) + 2):
-                    x = self.find_p(query, e)
-                    if not p or p < x:
-                        p = x
-                        splits = [(e[i:], e[:i]) for i in range(len(e) + 1)]
-                        for c in letters:
-                            if c in e:
-                                letters = letters.replace(c, "")
-            else:
-                print(f"{query} == {e}")
-                return True
-        print(f"Recursing with highest P of: {p} with unfound: {letters}")
-        return (
-            self.find_word(
-                query, splits, letters, self.extend_mapper(splits, letters, query)
-            )
-            if letters and p
-            else (
-                True
-                if not letters and p > (1 / len(query)) * (len(query) * 0.75)
-                else False
-            )
-        )
+    @staticmethod
+    def re_arrange_edit(query: list, edit: str):
+        edits = [(a, b) for a, b in enumerate(edit)]
+        for a, b in edits:
+            for x, y in query:
+                if b == y and x != a:
+                    if x < a:
+                        edit = edit[:x] + b + edit[x:a] + edit[a + 1 :]
+                    else:
+                        edit = edit[:a] + edit[a + 1 : x] + b + edit[x:]
+        return edit
 
     def check_if_a_compares_b(self, a: str, b: str, un_same: str = None):
-        if a != b and not b in a or not a in b:
-            if len(a) < len(b):
-                return self.check_if_a_compares_b(b, a)
-            for char in b:
-                if char in a:
-                    un_same = (
-                        a.replace(char, "").strip()
-                        if not un_same
-                        else un_same.replace(char, "").strip()
-                    )
-            return (
-                self.find_word(a, [(b[:i], b[i:]) for i in range(len(b) + 1)], un_same)
-                if un_same
-                else False
-            )
-        return True
+        if len(a) >= len(b):
+            if a != b:
+                if len(a) > len(b) and a.find(b) != -1:
+                    for char in a:
+                        if b.find(char) == -1 or b.count(char) < a.count(char):
+                            un_same = char if not un_same else un_same + char
+                    return self.fill_gaps(b, un_same, a)
+                return self.compare_meaning_a_to_b(a, b)
+            return True
+        return self.check_if_a_compares_b(b, a)
 
     async def find_fit_via_filename(self, record: dict, name: str = None):
         if name:
             for model in self.models:
-                names = [clean_str(model.__name__), clean_str(model.__tablename__)]
+                names = (model.__name__, model.__tablename__)
                 for n in names:
-                    if name == n:
+                    if self.check_if_a_compares_b(clean_str(n), clean_str(name)):
                         return await self.find_similarity_in_columns(record, flag=n)
         return await self.find_similarity_in_columns(record)
 
-    async def find_fit_in_model_table_values(
-        self, record: dict, infer: dict, w: int = 0
-    ):
-        print("Infered model from columns: \n", infer)
-        try:
-            if infer["k"] and infer["m"]:
-                from utils.stmt import read_stmt
+    async def find_fit_in_model_table_values(self, result: list, record: dict):
+        if result:
+            from utils.rel import relshp, read_stmt
 
-                data = await read_stmt.read_stmt(infer["m"])
+            for r in result:
+                data = await read_stmt.read_stmt(r["m"])
                 if data:
+                    data = [data] if not isinstance(data, list) else data
                     for d in data:
-                        for i in range(len(infer["k"])):
-                            for k in infer["k"][i].keys():
-                                if k in d and isinstance(
-                                    record[infer["k"][i][k]], type(d[k])
-                                ):
-                                    if isinstance(d[k], str):
-                                        if not self.check_if_a_compares_b(
-                                            d[k], record[infer["k"][i][k]]
-                                        ):
-                                            w -= 1
-                                    w += 1
-                    if w:
-                        if w < 0:
-                            return await self.find_similarity_in_columns(
-                                record, (infer["m"],)
-                            )
-                        from utils.rel import upd, relshp
-
-                        if len(upd.return_keys(record.keys())) < len(
-                            upd.return_keys(self.collect_cols(infer["m"]))
-                        ):
-                            return await self.find_similarity_in_columns(
-                                record,
-                                (infer["m"],),
-                                relshp.check_if_model_contains_relations(infer["m"])[1],
-                            )
-                        return await self.normalize_attr(infer, record)
-                return await self.why_exist_in_infer(record, infer)
-        except KeyError:
-            return await self.find_similarity_in_columns(record)
-
-    async def why_exist_in_infer(self, record: dict, infer: dict):
-        nxt_inf, record = await self.find_similarity_in_columns(record, (infer["m"],))
-        return self.check_why_v_existed_toward_m(nxt_inf, infer, record)
+                        for k in d.keys():
+                            if isinstance(d[k], str):
+                                for l in record.keys():
+                                    if isinstance(
+                                        record[l], type(d[k])
+                                    ) and self.check_if_a_compares_b(
+                                        clean_str(record[l]), clean_str(d[k])
+                                    ):
+                                        if {k: l} not in r["k"]:
+                                            for x in result:
+                                                if x != r:
+                                                    rel = relshp.check_if_model_contains_relations(
+                                                        x["m"]
+                                                    )
+                                                    if rel[0] == r["m"].__tablename__:
+                                                        v = await self.why_infered(
+                                                            record, x
+                                                        )
+                                                        if v + x["v"] > x["v"]:
+                                                            x["k"].append(
+                                                                {rel[1]: rel[1]}
+                                                            )
+                                                            record[rel[1]] = d["id"]
+                                                        x["v"] += v
+                                            r["k"].append({k: l})
+                                            r["v"] += 1
+            return self.find_greatest_potential_of_exist(
+                sorted(result, key=lambda x: x["v"], reverse=True), record
+            )
+        return {"error": "Failed to find any model fitting the data!!"}
 
     async def find_similarity_in_columns(
-        self, record: dict, excpt: tuple = None, flag: str = None, result: list = []
+        self, record: dict, excpt: tuple = None, flag: str = None, result: list = None
     ):
-        for k in record.keys():
-            if not k.endswith("id"):
-                for m in self.models:
-                    r = {"m": m, "k": [], "v": 0}
-                    if excpt and m in excpt:
-                        continue
-                    for col in m.__table__.c:
-                        if flag and m.__tablename__ == flag or col.key == flag:
-                            r["v"] += 1
-                        elif not col.key.endswith("id") and not col.key.startswith(
-                            self.ts_flags
-                        ):
-                            if self.check_if_a_compares_b(
-                                clean_str(col.key), clean_str(k)
+        for m in self.models:
+            if not excpt or m not in excpt:
+                r = {"m": m, "k": [], "v": 0}
+                if flag == m.__tablename__:
+                    r["v"] += 1
+                for col in m.__table__.c:
+                    if not col.key.endswith("id"):
+                        for k in record.keys():
+                            if (
+                                not k.endswith("id")
+                                and clean_str(col.key) == clean_str(k)
+                                or self.check_if_a_compares_b(
+                                    clean_str(col.key), clean_str(k)
+                                )
+                                and {col.key: k} not in r["k"]
                             ):
                                 r["k"].append({col.key: k})
                                 r["v"] += 1
-                    if r["v"] and r["k"]:
-                        if not result:
-                            result.append(r)
-                        else:
-                            for x in result:
-                                if x["m"] == r["m"]:
-                                    result = [y for y in result if y != x]
-                                    r["k"].extend(
-                                        [y for y in x["k"] if y not in r["k"]]
-                                    )
-                                    if len(r["k"]) > len(x["k"]):
-                                        r["v"] += x["v"]
-                            result.append(r)
-        print("Models found for inference: \n", result)
-        return await self.find_greatest_potential_of_exist(result, record)
+                if r["v"] and r["k"]:
+                    r["v"] = len(r["k"]) - 1 if r["v"] > len(r["k"]) else r["v"]
+                    if result:
+                        for x in result:
+                            if x["m"] == r["m"]:
+                                result = [y for y in result if y != x]
+                                r["k"].extend([y for y in x["k"] if y not in r["k"]])
+                                if len(r["k"]) > len(x["k"]):
+                                    r["v"] += x["v"]
+                                break
+                        result.append(r)
+                    else:
+                        result = [r]
+        return await self.find_fit_in_model_table_values(result, record)
+
+    @staticmethod
+    async def why_infered(record: dict, infer: dict, count: int = 0):
+        from utils.rel import upd
+
+        for i in range(len(infer["k"])):
+            for col in infer["m"].__table__.c:
+                if col.key in upd.return_keys(record.keys()):
+                    count += 1
+                elif col.key in infer["k"] and isinstance(
+                    record[infer["k"][i][col.key]], col.type.python_type
+                ):
+                    count += 1
+                    if isinstance(record[infer["k"][i][col.key]], str):
+                        count += count * 0.2
+                else:
+                    count -= 1
+        return count
 
     async def find_greatest_potential_of_exist(
         self, result: list, record: dict, infer: dict = None
     ):
         for r in result:
-            if infer and infer["m"] != r["m"]:
-                if len(infer["k"]) > len(r["k"]):
+            if not infer or r["m"] != infer["m"] and r["k"]:
+                if infer and len(infer["k"]) < len(r["k"]):
                     infer, record = self.check_why_v_existed_toward_m(infer, r, record)
-            else:
+                elif len(r["k"]) == 1:
+                    r["v"] += self.why_infered(record, r, 0)
+                from utils.rel import upd
+
                 for k in r["k"]:
                     for x in k.keys():
-                        if x or x.capitalize() in record:
+                        if x in upd.return_keys(record.keys()):
                             r["v"] += r["v"] / len(r["k"])
                         else:
                             r["v"] -= r["v"] / len(r["k"])
-            if not infer or r["v"] > infer["v"]:
-                infer = r
-        return await self.find_fit_in_model_table_values(record, infer)
+                if not infer or r["v"] > infer["v"]:
+                    infer = r
+        return (
+            await self.normalize_attr(infer, record)
+            if infer["v"] > infer["k"]
+            else {"error": "not enough key-data to make any connection to model"}
+        )
 
     async def normalize_attr(self, infer: dict, record: dict, norm: dict = None):
-        if not infer or not record:
-            raise ValueError("Params missing for data normalization!!")
-        elif not infer["k"] or not infer["m"]:
-            return await self.find_similarity_in_columns(record)
-        for k in infer["k"]:
-            for x in k.keys():
-                if k[x] in record:
-                    if not norm:
-                        norm = {x: record[k[x]]}
-                    else:
-                        norm[x] = record[k[x]]
-        print("Normalized data: \n", norm)
-        return (infer, self.fill_missing_v(record, norm))
+        if "k" and "m" in infer and record:
+            for k in infer["k"]:
+                for x in k.keys():
+                    if k[x] in record:
+                        if not norm:
+                            norm = {x: record[k[x]]}
+                        else:
+                            norm[x] = record[k[x]]
+            return (infer, self.fill_missing_v(record, norm))
+        return await self.find_similarity_in_columns(record)
 
     @staticmethod
     def fill_missing_v(record: dict, norm: dict):
         for k in record.keys():
             if not k in norm:
                 norm[k] = record[k]
-        print("Normalized with filled missings: \n", norm)
         return clean_data(norm)
 
     @staticmethod
@@ -254,11 +235,8 @@ class FindFitToModel:
                                     if self.collect_cols(r_mod["m"]).index(
                                         y
                                     ) == self.collect_cols(infer["m"]).index(col.key):
-                                        infer["k"].append({col.key: x[y]})
-                                        print(
-                                            "Record after why v existed towards model: \n",
-                                            record,
-                                        )
+                                        if {col.key: x[y]} not in infer["k"]:
+                                            infer["k"].append({col.key: x[y]})
         return (infer, record)
 
 

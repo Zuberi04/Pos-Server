@@ -308,7 +308,8 @@ class UpdateReqs:
                     shell=True,
                 ).check_returncode()
             except CalledProcessError:
-                return self.audit_installed_pkgs()
+                raise CalledProcessError
+                # return self.audit_installed_pkgs()
             return print(
                 f"Updated requirements file with a size of: {req.stat().st_size / 1024}kb!!"
             )

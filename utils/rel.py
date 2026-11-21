@@ -3,7 +3,7 @@ from typing import Any
 
 from utils.find_fit import find_fit_model
 from utils.stmt import read_stmt
-from utils.extras import MODELS, TS_FLAGS
+from utils.extras import MODELS, TS_FLAGS, clean_str
 from utils.cog_pricing import est_price
 
 
@@ -72,12 +72,15 @@ class FindRelationBtwData:
                 rel = self.check_if_model_contains_relations(m)
                 if res:
                     record[rel[1]] = res[-1]["id"]
-                elif not rel[1] in record:
-                    infer, record = await find_fit_model.find_similarity_in_columns(
-                        record, (m,)
+                elif not rel[1] in record or m.__tablename__ != rel[0]:
+                    print(f"Finding parent model for model: {m} with parent {rel[0]} ")
+                    infer = await find_fit_model.find_similarity_in_columns(
+                        record, (m,), rel[0]
                     )
-                    while infer["m"].__tablename__ != rel[0]:
-                        infer, record = await find_fit_model.find_similarity_in_columns(
+                    while infer[0]["m"].__tablename__ != rel[0] and isinstance(
+                        infer, tuple
+                    ):
+                        infer = await find_fit_model.find_similarity_in_columns(
                             record,
                             (
                                 infer["m"],
@@ -85,11 +88,17 @@ class FindRelationBtwData:
                             ),
                             rel[0],
                         )
-                    if infer["m"] in models:
-                        models.remove(infer["m"])
-                    print(f"Model found from infer: {infer['m']} parent of {m}:")
-                    res.append(await self.update_write_or_return(infer["m"], record))
-                    models.append(m)
+                    if isinstance(infer, tuple):
+                        if infer[0]["m"] in models:
+                            models.remove(infer["m"])
+                        print(f"Model found from infer: {infer[0]['m']} parent of {m}:")
+                        res.append(
+                            await self.update_write_or_return(infer[0]["m"], infer[1])
+                        )
+                        models.append(m)
+                    else:
+                        record.update(infer)
+                        res.append(record)
                 else:
                     res.append(await self.update_write_or_return(m, record))
         return res
@@ -100,12 +109,12 @@ class FindRelationBtwData:
             record = est_price.calculate_cog_from_r_price(record)
         for model in self.models:
             if model.__tablename__ == tn:
-                infer, record = await find_fit_model.find_similarity_in_columns(
+                infer = await find_fit_model.find_similarity_in_columns(
                     record, (mod,), tn
                 )
-                while infer["m"] != model:
+                while infer[0]["m"] != model and isinstance(infer, tuple):
                     print(f"Recursing due inquality model: {infer['m']}: {model}")
-                    infer, record = await find_fit_model.find_similarity_in_columns(
+                    infer = await find_fit_model.find_similarity_in_columns(
                         record,
                         (
                             infer["m"],
@@ -113,7 +122,11 @@ class FindRelationBtwData:
                         ),
                         tn,
                     )
-                return await self.update_write_or_return(model, record)
+                return (
+                    await self.update_write_or_return(model, infer[1])
+                    if isinstance(infer, tuple)
+                    else infer
+                )
         return None
 
     async def check_if_relshp_v_exist(self, model: Any, record: dict):
@@ -139,13 +152,11 @@ class FindRelationBtwData:
     async def update_write_or_return(self, model: Any, record: dict):
         try:
             update = await upd.check_if_update(record, model, model.__tablename__)
-            if update and isinstance(update, tuple):
-                return await read_stmt.update_db_entries(update[0], update[1])
-            return (
-                await read_stmt.write_items_to_db(model, record)
-                if not update
-                else update
-            )
+            if update:
+                if isinstance(update, tuple):
+                    return await read_stmt.update_db_entries(update[0], update[1])
+                return update
+            return await read_stmt.write_items_to_db(model, record)
         except IntegrityError:
             return await self.check_if_rel_is_needed(record, model)
 
@@ -177,18 +188,18 @@ class FindUpdate:
 
     def return_keys(self, keys: set):
         return {
-            k for k in keys if not k.endswith("id") and not k.startswith(self.ts_flags)
+            clean_str(k)
+            for k in keys
+            if not k.endswith("id") and not k.startswith(self.ts_flags)
         }
 
     async def check_if_update(self, record: dict, model: Any, tn: str):
-        print(f"Beginning update check on {tn}....")
         exist = await read_stmt.check_if_update_or_new_entry(record, model)
         if exist:
             prev = await read_stmt.read_stmt_to_dict(exist)
             if self.check_inequality(prev, record):
                 inqs = await self.find_how_update_occurs_btw_prev_nxt(prev, record, tn)
                 if inqs:
-                    print("Inquired updates: \n", inqs)
                     if not isinstance(inqs, str):
                         for k in record.keys():
                             if k in inqs and not isinstance(record[k], str):
@@ -220,7 +231,6 @@ class FindUpdate:
         return "replace"
 
     async def find_how_update_occurs_btw_prev_nxt(self, prev: dict, nxt: dict, tn: str):
-        print("finding how update occurs based on previous entry!!")
         form = self.find_equality_of_keys(prev, nxt)
         if not isinstance(form, str):
             upd: Any = None
@@ -243,7 +253,6 @@ class FindUpdate:
         self, record: dict, prev: dict, form: tuple, extra: dict = None
     ):
         res: dict = {}
-        print("Checking update in 3->l rel...")
         for k in prev.keys():
             if k in record and isinstance(record[k], type(prev[k])):
                 if isinstance(prev[k], (float, int)):

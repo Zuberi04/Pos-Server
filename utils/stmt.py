@@ -55,18 +55,20 @@ class ReadStatements:
     @staticmethod
     @run_in_thread_pool
     def read_stmt_to_dict(stmt: Any):
-        from sqlalchemy import inspect
+        if stmt:
+            from sqlalchemy import inspect
 
-        try:
-            return {
-                c.key: getattr(stmt, c.key)
-                for c in inspect(stmt, raiseerr=ValueError).mapper.column_attrs
-            }
-        except ValueError:
-            return {
-                clean_str(col.key): getattr(stmt, col.key, None)
-                for col in stmt.__table__.c
-            }
+            try:
+                return {
+                    c.key: getattr(stmt, c.key)
+                    for c in inspect(stmt, raiseerr=ValueError).mapper.column_attrs
+                }
+            except ValueError:
+                return {
+                    clean_str(col.key): getattr(stmt, col.key, None)
+                    for col in stmt.__table__.c
+                }
+        return None
 
     @staticmethod
     @run_in_thread_pool
@@ -182,17 +184,17 @@ class ReadStatements:
 
     @run_in_thread_pool
     async def check_if_update_or_new_entry(
-        self, data: dict, model: Any, flag: bool = False
+        self, data: dict, model: Any, out: str = None, flag: bool = False
     ):
         for k in data.keys():
-            if flag or k.find("id") != -1 and isinstance(data[k], str):
+            if k != out and flag or k.find("id") != -1 and isinstance(data[k], str):
                 upd = await self.check_if_values_upd(
                     await self.read_stmt(model, data[k]), data, model
                 )
                 if upd:
                     return upd
         return (
-            await self.check_if_update_or_new_entry(data, model, True)
+            await self.check_if_update_or_new_entry(data, model, out, True)
             if not flag
             else None
         )

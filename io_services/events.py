@@ -50,7 +50,7 @@ async def authenticate(sid, data: dict):
     res["ts"] = await io.timestamp()
     print("Res: ", res)
     if "id" in res:
-        await sio.save_session(sid, {"user": res.id})
+        await sio.save_session(sid, {"user": res["id"]})
     return await sio.emit(
         "auth-error" if "error" in res else "authenticated", res, to=sid
     )
