@@ -26,7 +26,7 @@ class AuditLogs:
             for k in inc.copy().keys():
                 if not k in prev:
                     del inc[k]
-        path = self.audit_path / f"{user_id}"
+        path = self.audit_path / f"{user_id.split('-')[-1]}"
         path.mkdir(exist_ok=True)
         path = path / f"{name}.csv"
         return await self.write_to_audit(

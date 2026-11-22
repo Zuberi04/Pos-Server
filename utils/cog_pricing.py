@@ -13,7 +13,7 @@ class EstimateCOG:
                         continue
                     return self.calculate_cog_from_r_price(data, cog * x)
             print("Data passed for pricing: \n", data)
-            data["amount"] = cog * data["stock"]
+            data["total"] = cog * data["stock"]
             return data
         raise ArithmeticError(
             f"Failed in parsing cog with error val lack of equality check btw {data['price']} and {cog} at e of {x}"

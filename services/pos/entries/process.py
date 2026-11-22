@@ -151,6 +151,7 @@ class ProcessFile:
         from io import BytesIO
 
         buffer = BytesIO(data["file"])
+
         if item.endswith(("s", "x", "sb")):
             try:
                 df = pd.read_excel(data["path"], engine="calamine", sheet_name=None)
@@ -174,7 +175,6 @@ class ProcessFile:
                 df = pd.read_csv(data["path"])
             except Exception:
                 df = pd.read_csv(buffer)
-
         if not len(df) or df is None:
             raise ValueError("Failed to create df structure from passed file!!")
         elif not isinstance(df, pd.DataFrame):
@@ -225,6 +225,7 @@ class ProcessFile:
             res.append(
                 await self.process_record_find_entry(rec, clean_str(entry["name"]))
             )
+        print(f"Response with values: \n\t {res}")
         return res
 
     async def process_record_find_entry(self, record: dict, flag: str):

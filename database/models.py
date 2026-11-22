@@ -11,7 +11,6 @@ from sqlalchemy import (
     Float,
     CHAR,
     BINARY,
-    null,
 )
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import relationship, DeclarativeBase
@@ -60,7 +59,6 @@ class AdminUser(Base):
     otp = Column(String(256), nullable=False, unique=True)
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
-
     inventory_rel = relationship(
         "Inventory",
         backref="admin_users",
@@ -103,7 +101,7 @@ class Inventory(Base):
     id = Column(GUID, default=uuid4, unique=True, nullable=False, primary_key=True)
     category = Column(String(50), unique=False, nullable=False)
     stock = Column(Integer, nullable=False, default=0)
-    amount = Column(Float, nullable=False, default=0)
+    total = Column(Float, nullable=False, default=0)
     mode = Column(String(30), nullable=False, name="mode", default="cash")
     user_id = Column(
         GUID,
@@ -113,7 +111,6 @@ class Inventory(Base):
     flag = Column(String(30), nullable=False, default="non-asset")
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
-
     catalog_rel = relationship(
         "Catalog",
         backref="inventory",
@@ -132,7 +129,7 @@ class Inventory(Base):
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
-        return f"Inventory: (id={self.id}, category={self.category}, stock={self.stock}, amount={self.amount}, mode={self.mode} user_id={self.user_id}, flag={self.flag} created={self.created}, updated={self.updated})"
+        return f"Inventory: (id={self.id}, category={self.category}, stock={self.stock}, total={self.total}, mode={self.mode} user_id={self.user_id}, flag={self.flag} created={self.created}, updated={self.updated})"
 
 
 class Catalog(Base):
@@ -155,7 +152,6 @@ class Catalog(Base):
     )
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
-
     sales_rel = relationship(
         "Sales",
         backref="catalog",
@@ -194,11 +190,10 @@ class Sales(Base):
         nullable=False,
     )
     quantity = Column(Integer, default=0, nullable=False)
-    amount = Column(Float, nullable=False)
+    total = Column(Float, nullable=False)
     mode = Column(String(30), nullable=False, default="cash")
     created = Column(DateTime, default=datetime.datetime.now, nullable=False)
     updated = Column(DateTime, nullable=True)
-
     credited_rel = relationship(
         "Credited",
         backref="sales",
@@ -217,7 +212,7 @@ class Sales(Base):
         return metadata.tables.__sizeof__()
 
     def __repr__(self):
-        return f"Sales: (id={self.id}, p_id={self.p_id}, quantity={self.quantity}, amount={self.amount}, mode={self.mode}, created={self.created}, updated={self.updated})"
+        return f"Sales: (id={self.id}, p_id={self.p_id}, quantity={self.quantity}, total={self.total}, mode={self.mode}, created={self.created}, updated={self.updated})"
 
 
 class Credited(Base):

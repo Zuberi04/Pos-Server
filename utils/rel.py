@@ -22,7 +22,6 @@ class FindRelationBtwData:
             )
             if deps:
                 deps.extend([mod, exist[0] if isinstance(exist, tuple) else None])
-            print("Depends on: \n", deps)
             return await self.write_to_dependency(record, deps)
         tn, key = self.check_if_model_contains_relations(mod)
         wrote = await self.find_belongs_to(tn, record, mod)
@@ -60,12 +59,7 @@ class FindRelationBtwData:
                                 result.append(m)
         return result
 
-    async def write_to_dependency(
-        self,
-        record: dict,
-        models: list,
-        res: list = [],
-    ):
+    async def write_to_dependency(self, record: dict, models: list, res: list = []):
         for m in models:
             models = [x for x in models if x != m]
             if m:
@@ -77,8 +71,9 @@ class FindRelationBtwData:
                     infer = await find_fit_model.find_similarity_in_columns(
                         record, (m,), rel[0]
                     )
-                    while infer[0]["m"].__tablename__ != rel[0] and isinstance(
-                        infer, tuple
+                    while (
+                        isinstance(infer, tuple)
+                        and infer[0]["m"].__tablename__ != rel[0]
                     ):
                         infer = await find_fit_model.find_similarity_in_columns(
                             record,
@@ -90,13 +85,13 @@ class FindRelationBtwData:
                         )
                     if isinstance(infer, tuple):
                         if infer[0]["m"] in models:
-                            models.remove(infer["m"])
-                        print(f"Model found from infer: {infer[0]['m']} parent of {m}:")
+                            models.remove(infer[0]["m"])
                         res.append(
                             await self.update_write_or_return(infer[0]["m"], infer[1])
                         )
                         models.append(m)
                     else:
+                        print(f"Error returned with value: \n\t {infer}")
                         record.update(infer)
                         res.append(record)
                 else:
@@ -104,8 +99,7 @@ class FindRelationBtwData:
         return res
 
     async def find_belongs_to(self, tn: str, record: dict, mod: Any):
-        print("Table found with name: ", tn)
-        if tn.endswith("ory"):
+        if tn.endswith("tory"):
             record = est_price.calculate_cog_from_r_price(record)
         for model in self.models:
             if model.__tablename__ == tn:
@@ -190,7 +184,7 @@ class FindUpdate:
         return {
             clean_str(k)
             for k in keys
-            if not k.endswith("id") and not k.startswith(self.ts_flags)
+            if not k.startswith(self.ts_flags) and not "id" in k
         }
 
     async def check_if_update(self, record: dict, model: Any, tn: str):
@@ -201,6 +195,8 @@ class FindUpdate:
                 inqs = await self.find_how_update_occurs_btw_prev_nxt(prev, record, tn)
                 if inqs:
                     if not isinstance(inqs, str):
+                        if "error" in inqs:
+                            return inqs
                         for k in record.keys():
                             if k in inqs and not isinstance(record[k], str):
                                 record[k] = inqs[k] + str(record[k])
@@ -211,68 +207,136 @@ class FindUpdate:
 
     @staticmethod
     def compare_ts(r: dict, p_rec: dict):
-        if (
-            r[("updated" if r["updated"] else "created")]
-            > p_rec[("updated" if p_rec["updated"] else "created")]
-        ):
-            return True
-        return False
+        def ts(sec: int = 5):
+            from datetime import timedelta, datetime
+
+            return datetime.now() - timedelta(seconds=sec)
+
+        if not r:
+            return "update"
+        elif r["updated"]:
+            if p_rec["updated"]:
+                if ts() > p_rec["updated"]:
+                    if ts() > r["updated"]:
+                        return "update"
+                return None
+            return "update"
+        elif not p_rec["updated"]:
+            if p_rec["created"] > r["created"]:
+                if ts() > p_rec["created"]:
+                    return "update"
+                return None
+            elif r["created"] < ts():
+                return "update"
+            return None
+        elif ts(10) < p_rec["updated"]:
+            return "update"
+        return None
 
     def find_equality_of_keys(self, prev: dict, record: dict) -> str | tuple[str]:
         if prev.keys() != record.keys():
             if "id" in record and record["id"] == prev["id"]:
-                if len(prev.keys) > len(record.keys()):
+                if len(prev.keys()) > len(record.keys()):
                     return ("deduct", "child")
                 return ("update", "parent")
             elif self.return_keys(prev.keys()) != self.return_keys(record.keys()):
-                if len(prev.keys) > len(record.keys()):
-                    return ("update", "child")
+                if len(self.return_keys(prev.keys())) != len(
+                    self.return_keys(record.keys())
+                ):
+                    if len(self.return_keys(prev.keys())) > len(
+                        self.return_keys(record.keys())
+                    ):
+                        return ("update", "child")
             return ("update", "parent")
         return "replace"
 
     async def find_how_update_occurs_btw_prev_nxt(self, prev: dict, nxt: dict, tn: str):
         form = self.find_equality_of_keys(prev, nxt)
         if not isinstance(form, str):
-            upd: Any = None
             for m in self.models:
-                if form[-1] != "child":
-                    if relshp.check_if_model_contains_relations(m)[1] in m.__table__.c:
-                        upd = await read_stmt.check_if_update_or_new_entry(m, nxt)
-                elif tn == relshp.check_if_model_contains_relations(m)[0]:
-                    upd = await read_stmt.check_if_update_or_new_entry(m, nxt)
-                elif upd:
-                    return await self.find_how_update_occurs_btw_prev_nxt_if_extra(
-                        nxt, prev, form, await read_stmt.read_stmt(upd)
-                    )
-            return await self.find_how_update_occurs_btw_prev_nxt_if_extra(
-                nxt, prev, form
-            )
+                if m.__tablename__ != tn:
+                    rel = relshp.check_if_model_contains_relations(m)
+                    from utils.find_fit import find_fit_model
+
+                    if (
+                        form[-1] != "child"
+                        and rel[0] == tn
+                        or rel[-1] in find_fit_model.collect_cols(m)
+                    ):
+                        if rel[0] == tn:
+                            return await self.find_how_update_occurs_btw_rels(
+                                nxt,
+                                prev,
+                                form,
+                                tn,
+                                await read_stmt.read_stmt_to_dict(
+                                    await read_stmt.check_if_update_or_new_entry(nxt, m)
+                                ),
+                            )
         return form
 
-    async def find_how_update_occurs_btw_prev_nxt_if_extra(
-        self, record: dict, prev: dict, form: tuple, extra: dict = None
+    @staticmethod
+    async def update_conflict_to_audit_logs(
+        act: dict, prev: dict, tn: str, extra: dict = None, flag: str = None
     ):
-        res: dict = {}
-        for k in prev.keys():
-            if k in record and isinstance(record[k], type(prev[k])):
-                if isinstance(prev[k], (float, int)):
-                    l = self.check_linear_update(prev[k], record[k])
-                    if extra:
-                        if k in extra and isinstance(record[k], type(extra[k])):
-                            x = self.check_linear_update(extra[k], record[k])
-                            if x != l:
-                                if isinstance(x, type(l)):
-                                    if not isinstance(x, str):
-                                        l = l + x
-                                    else:
-                                        l = (l, x)
+        await read_stmt.update_audits(tn, act, prev, extra)
+        return {"error": f"{flag} confilct occurred btw updates!!"}
+
+    async def find_how_update_occurs_btw_rels(
+        self,
+        record: dict,
+        prev: dict,
+        form: tuple,
+        tn,
+        extra: dict = None,
+        l: tuple = None,
+    ):
+
+        if self.check_inequality(prev, record, extra):
+            if self.compare_ts(extra, prev):
+                inqs = {}
+                for k in prev.keys():
+                    if isinstance(prev[k], (float, int)) and k in record:
+                        if not l:
+                            l = self.check_linear_update(prev[k], record[k])
+                        else:
+                            l = l + self.check_linear_update(prev[k], record[k])
+                        if l:
+                            if not isinstance(l, str):
+                                if extra:
+                                    for e in extra.keys():
+                                        if (
+                                            isinstance(extra[e], (float, int))
+                                            and e in record
+                                        ):
+                                            x = self.check_linear_update(
+                                                extra[e], record[e], form[-1]
+                                            )
+                                            if x:
+                                                if isinstance(x, str):
+                                                    return await self.update_conflict_to_audit_logs(
+                                                        record,
+                                                        prev,
+                                                        tn,
+                                                        extra,
+                                                        "rel-numeric",
+                                                    )
+                                                inqs[k] = self.compare_form_with_linear(
+                                                    l + x, form
+                                                )
                                 else:
-                                    if isinstance(l, tuple) and isinstance(x, str):
-                                        l = l + (x,)
-                                    elif isinstance(x, tuple) and isinstance(l, str):
-                                        l = x + (l,)
-                    res[k] = self.compare_form_with_linear(l, form)
-        return res
+                                    inqs[k] = self.compare_form_with_linear(l, form)
+                            else:
+                                if l != "replace":
+                                    return await self.update_conflict_to_audit_logs(
+                                        record, prev, tn, extra, "numeric"
+                                    )
+                                return l
+                return inqs if inqs else None
+            return await self.update_conflict_to_audit_logs(
+                record, prev, tn, extra, "date"
+            )
+        return None
 
     @staticmethod
     def compare_form_with_linear(l: tuple, form: tuple):
@@ -282,32 +346,42 @@ class FindUpdate:
                     return "-"
                 return "+"
         raise ValueError(
-            f"Failed to find update value from compares: \n {l} and \n {form}"
+            f"Failed to find update value from compares: \n {l} and {form}"
         )
 
-    def check_inequality(self, p_rec: dict, nxt: dict, c_rec: dict = None):
+    def check_inequality(self, rec: dict, nxt: dict, c_rec: dict = None):
         for k in nxt.keys():
-            if not k.endswith("id") and not k.startswith(self.ts_flags):
-                if k in p_rec:
-                    if isinstance(nxt[k], type(p_rec)) and p_rec[k] != nxt[k]:
-                        return True
-                elif c_rec and k in c_rec:
-                    if isinstance(nxt[k], type(c_rec[k])) and c_rec[k] != nxt[k]:
-                        return True
+            if k in rec and isinstance(nxt[k], type(rec[k])) and rec[k] != nxt[k]:
+                if c_rec:
+                    for x in nxt.keys():
+                        if x in c_rec and isinstance(nxt[x], type(c_rec[x])):
+                            if c_rec[x] != nxt[x]:
+                                return True
+                            elif isinstance(c_rec[x], (float, int)):
+                                return False
+                return True
         return False
 
     @staticmethod
     def check_linear_update(
-        act: int | float, inc: int | float, l: int = 100
-    ) -> str | tuple[str]:
-        if inc:
-            if act:
-                move = inc / act * l
-                if move > l:
-                    return ("replace", "update")
-                return ("replace", "deduct")
-            return "update"
-        return "conflict"
+        act: int | float, inc: int | float, f: str = "actual", l: float = 100
+    ):
+        if act != inc:
+            if inc:
+                if act:
+                    move = inc / act * l
+                    if move > l:
+                        if f != "actual":
+                            return ("replace", "update")
+                        return "replace"
+                    elif f != "actual":
+                        if f != "child":
+                            return ("replace", "update")
+                        return ("replace", "deduct")
+                    return "replace"
+                return ("replace", "update")
+            return ("replace", "deduct") if act - l == inc else "conflict"
+        return None
 
     async def find_user_id(self, record: dict):
         if not self.f_keys:

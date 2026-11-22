@@ -1,6 +1,8 @@
 import datetime
 from typing import Any
 
+from numpy import isin
+
 from database.config import create_db
 from utils.extras import run_in_thread_pool, MODELS, TS_FLAGS, clean_str
 
@@ -96,21 +98,24 @@ class ReadStatements:
             )
 
     @run_in_thread_pool
-    async def update_audits(self, model, data, record: dict, prev: dict = None):
-        if model in MODELS:
+    async def update_audits(
+        self, model: Any, data: dict, record: dict, prev: dict = None
+    ):
+        if isinstance(model, str):
             from services.pos.audits import audit_log
 
-            if "user_id" in data:
-                await audit_log.add_audit_log(
-                    record, data["user_id"], model.__name__, prev
-                )
-            else:
+            if not "user_id" in data:
                 from utils.rel import upd
 
-                user_id = await upd.find_user_id(record)
-                if not user_id:
-                    raise ValueError("Failed to find user id!!")
-                await audit_log.add_audit_log(record, user_id, model.__name__, prev)
+                data["user_id"] = await upd.find_user_id(record)
+                if not data["user_id"]:
+                    raise ValueError(
+                        f"Failed to find user id for record: \n\t {record}"
+                    )
+            await audit_log.add_audit_log(record, data["user_id"], model, prev)
+        else:
+            if model in MODELS:
+                return await self.update_audits(model.__name__, data, record, prev)
         return await self.delete_unneeded_data(record)
 
     @run_in_thread_pool
