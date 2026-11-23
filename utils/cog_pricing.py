@@ -20,18 +20,18 @@ class EstimateCOG:
         )
 
     def calculate_cog_from_r_price(self, data: dict, cog: float = 0):
-        if not "price" or not "stock" in data or "amount" in data:
-            return data
-        elif cog and cog > data["price"]:
-            self.eff = self.calc_n_eff(cog, data["price"])
-        cog = 0
-        for k in self.eff.keys():
-            cog += data["price"] / self.eff[k]
-        cog *= 1 / len(self.eff)
-        print(f"Cog to price: {cog}: {data['price']}")
-        if cog >= data["price"]:
-            return self.calculate_cog_from_r_price(data, cog)
-        return self.parse_cog(cog, data)
+        if "price" and "stock" and not "amount" in data:
+            if cog and cog > data["price"]:
+                self.eff = self.calc_n_eff(cog, data["price"])
+            cog = 0
+            for k in self.eff.keys():
+                cog += data["price"] / self.eff[k]
+            cog *= 1 / len(self.eff)
+            print(f"Cog to price: {cog}: {data['price']}")
+            if cog >= data["price"]:
+                return self.calculate_cog_from_r_price(data, cog)
+            return self.parse_cog(cog, data)
+        return data
 
     def calc_n_eff(self, m: float, x: float):
         for e in self.eff.keys():

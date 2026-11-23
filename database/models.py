@@ -23,23 +23,33 @@ metadata = MetaData()
 class Base(DeclarativeBase):
     metadata = metadata
 
-    def __init__(self):
-        self.metadata
-
 
 class GUID(TypeDecorator):
     impl = CHAR(36)
     cache_ok = True
 
+    def load_dialect_impl(self, dialect):
+        if dialect.name != "postgresql":
+            if dialect.name != "mssql":
+                return dialect.type_descriptor(self.impl)
+            from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
+
+            return dialect.type_descriptor(UNIQUEIDENTIFIER())
+        from sqlalchemy.dialects.postgresql import UUID as PG_ID
+
+        return dialect.type_descriptor(PG_ID(as_uuid=True))
+
     def process_bind_param(self, value, dialect):
-        if isinstance(value, UUID):
-            return str(value)
-        return value
+        if not isinstance(value, UUID):
+            if isinstance(value, str):
+                if "-" in value and value.count("-") == 4 and not UUID(str(value)):
+                    raise ValueError("Error, {value} -> not of type str or [UUID]")
+            return value
+        return value if dialect.name.startswith("post") else str(value)
 
     def process_result_value(self, value: sqltypes.UUID, dialect=None):
-        if not value:
-            raise ValueError("Error, no value passed for conversion")
-        return str(value)
+        if value:
+            return str(value)
 
 
 class AdminUser(Base):
@@ -96,7 +106,6 @@ class AdminUser(Base):
 
 class Inventory(Base):
     __tablename__ = "inventory"
-    metadata
 
     id = Column(GUID, default=uuid4, unique=True, nullable=False, primary_key=True)
     category = Column(String(50), unique=False, nullable=False)
@@ -134,7 +143,6 @@ class Inventory(Base):
 
 class Catalog(Base):
     __tablename__ = "catalog"
-    metadata
 
     id = Column(
         GUID, unique=True, primary_key=True, nullable=False, default=uuid4, name="id"
@@ -143,7 +151,7 @@ class Catalog(Base):
     stock = Column(Integer, nullable=False, name="stock", default=0)
     min_stock = Column(Integer, nullable=False, default=0)
     sku = Column(String(50), nullable=True, unique=True)
-    barcode = Column(String(50), nullable=True)
+    barcode = Column(Integer, nullable=True)
     price = Column(Float, nullable=False, name="price")
     i_id = Column(
         GUID,
@@ -181,7 +189,6 @@ class Catalog(Base):
 
 class Sales(Base):
     __tablename__ = "sales"
-    metadata
 
     id = Column(GUID, primary_key=True, default=uuid4, nullable=False, unique=True)
     p_id = Column(
@@ -217,7 +224,6 @@ class Sales(Base):
 
 class Credited(Base):
     __tablename__ = "credited"
-    metadata
 
     id = Column(GUID, default=uuid4, nullable=False, primary_key=True, unique=True)
     name = Column(String(50), nullable=False, unique=True)
@@ -244,7 +250,6 @@ class Credited(Base):
 
 class Creditors(Base):
     __tablename__ = "creditors"
-    metadata
 
     id = Column(GUID, default=uuid4, nullable=False, primary_key=True, unique=True)
     name = Column(String(50), nullable=False, unique=True)
@@ -271,7 +276,6 @@ class Creditors(Base):
 
 class OperationExpenses(Base):
     __tablename__ = "operation_expenses"
-    metadata
 
     id = Column(GUID, primary_key=True, nullable=False, unique=True, default=uuid4)
     expense = Column(String(50), nullable=False)
@@ -299,7 +303,6 @@ class OperationExpenses(Base):
 
 class Users(Base):
     __tablename__ = "users"
-    metadata
 
     id = Column(GUID, primary_key=True, default=uuid4, unique=True, nullable=False)
     name = Column(String(50), nullable=False, unique=False)
