@@ -1,0 +1,330 @@
+{
+    "Inventory": {
+        "id": [
+            "id",
+            "inventory_id",
+            "inv_id",
+            "uuid",
+            "record_id"
+        ],
+        "category": [
+            "category",
+            "cat",
+            "item_category",
+            "product_group",
+            "department",
+            "type"
+        ],
+        "stock": [
+            "stock",
+            "warehouse_stock",
+            "warehousestock",
+            "bulk_stock",
+            "inv_stock",
+            "total_units",
+            "on_hand"
+        ],
+        "total": [
+            "total",
+            "total_cost",
+            "total_value",
+            "inventory_value",
+            "grand_total",
+            "batch_cost"
+        ],
+        "mode": [
+            "mode",
+            "payment_mode",
+            "payment_method",
+            "purchase_mode",
+            "transaction_type"
+        ],
+        "user_id": [
+            "user_id",
+            "admin_id",
+            "owner_id",
+            "created_by"
+        ],
+        "flag": [
+            "flag",
+            "asset_flag",
+            "item_type",
+            "status_flag",
+            "classification"
+        ],
+        "created": [
+            "created",
+            "created_at",
+            "date_created",
+            "timestamp",
+            "added_on"
+        ],
+        "updated": [
+            "updated",
+            "updated_at",
+            "last_modified",
+            "modified_on"
+        ]
+    },
+    "Catalog": {
+        "id": [
+            "id",
+            "catalog_id",
+            "product_id",
+            "item_id",
+            "uuid"
+        ],
+        "brand": [
+            "brand",
+            "brand_name",
+            "manufacturer",
+            "make",
+            "label",
+            "product_name"
+        ],
+        "stock": [
+            "stock",
+            "shelf_stock",
+            "shelfstock",
+            "store_stock",
+            "retail_stock",
+            "available_qty",
+            "display_stock"
+        ],
+        "min_stock": [
+            "min_stock",
+            "minimum_stock",
+            "reorder_level",
+            "safety_stock",
+            "low_stock_threshold"
+        ],
+        "sku": [
+            "sku",
+            "stock_keeping_unit",
+            "item_code",
+            "product_code",
+            "part_number"
+        ],
+        "barcode": [
+            "barcode",
+            "upc",
+            "ean",
+            "gtin",
+            "scan_code"
+        ],
+        "price": [
+            "price",
+            "unit_price",
+            "retail_price",
+            "selling_price",
+            "cost"
+        ],
+        "i_id": [
+            "i_id",
+            "inventory_id",
+            "inv_id",
+            "parent_inventory_id"
+        ],
+        "created": [
+            "created",
+            "created_at",
+            "date_added",
+            "listed_on"
+        ],
+        "updated": [
+            "updated",
+            "updated_at",
+            "last_modified",
+            "price_updated_at"
+        ]
+    },
+    "Sales": {
+        "id": [
+            "id",
+            "sale_id",
+            "order_id",
+            "transaction_id",
+            "receipt_id"
+        ],
+        "p_id": [
+            "p_id",
+            "product_id",
+            "catalog_id",
+            "item_id"
+        ],
+        "quantity": [
+            "quantity",
+            "qty",
+            "units_sold",
+            "count",
+            "sold_qty",
+            "volume"
+        ],
+        "total": [
+            "total",
+            "sale_total",
+            "revenue",
+            "amount_paid",
+            "subtotal",
+            "net_total"
+        ],
+        "mode": [
+            "mode",
+            "payment_mode",
+            "payment_type",
+            "tender_type",
+            "checkout_method"
+        ],
+        "created": [
+            "created",
+            "sale_date",
+            "sold_at",
+            "transaction_date",
+            "created_at"
+        ],
+        "updated": [
+            "updated",
+            "updated_at",
+            "modified_at"
+        ]
+    },
+    "Credited": {
+        "id": [
+            "id",
+            "credited_id",
+            "credit_record_id",
+            "debtor_id"
+        ],
+        "name": [
+            "name",
+            "customer_name",
+            "debtor_name",
+            "client_name",
+            "full_name",
+            "buyer"
+        ],
+        "phone": [
+            "phone",
+            "phone_number",
+            "mobile",
+            "contact",
+            "tel",
+            "telephone"
+        ],
+        "amount": [
+            "amount",
+            "credit_amount",
+            "balance_due",
+            "owed_amount",
+            "debt",
+            "receivable"
+        ],
+        "s_id": [
+            "s_id",
+            "sale_id",
+            "transaction_id",
+            "invoice_id"
+        ],
+        "created": [
+            "created",
+            "credit_date",
+            "issued_at",
+            "created_at"
+        ],
+        "updated": [
+            "updated",
+            "updated_at",
+            "settled_at",
+            "last_payment_date"
+        ]
+    },
+    "Creditors": {
+        "id": [
+            "id",
+            "creditor_id",
+            "supplier_id",
+            "vendor_id"
+        ],
+        "name": [
+            "name",
+            "creditor_name",
+            "supplier_name",
+            "vendor_name",
+            "lender",
+            "company_name"
+        ],
+        "phone": [
+            "phone",
+            "phone_number",
+            "contact_number",
+            "mobile",
+            "supplier_phone"
+        ],
+        "amount": [
+            "amount",
+            "amount_owed",
+            "payable_amount",
+            "credit_balance",
+            "liability"
+        ],
+        "p_id": [
+            "p_id",
+            "product_id",
+            "catalog_id",
+            "item_id"
+        ],
+        "created": [
+            "created",
+            "created_at",
+            "date_recorded",
+            "issued_on"
+        ],
+        "updated": [
+            "updated",
+            "updated_at",
+            "last_updated",
+            "paid_on"
+        ]
+    },
+    "OperationExpenses": {
+        "id": [
+            "id",
+            "expense_id",
+            "opex_id",
+            "voucher_id"
+        ],
+        "expense": [
+            "expense",
+            "expense_name",
+            "expense_type",
+            "cost_item",
+            "charge",
+            "category"
+        ],
+        "reason": [
+            "reason",
+            "description",
+            "notes",
+            "justification",
+            "memo",
+            "details"
+        ],
+        "user_id": [
+            "user_id",
+            "admin_id",
+            "approved_by",
+            "recorded_by"
+        ],
+        "created": [
+            "created",
+            "expense_date",
+            "incurred_at",
+            "created_at"
+        ],
+        "updated": [
+            "updated",
+            "updated_at",
+            "modified_at"
+        ]
+    }
+}

@@ -1,0 +1,782 @@
+{
+  "schema_version": "1.0",
+  "source": "SQLAlchemy models supplied in Pasted markdown.md",
+  "matching_guidance": {
+    "purpose": "Candidate aliases for fuzzy import field matching; aliases do not override model ownership or relationship validation.",
+    "normalization": [
+      "casefold",
+      "trim",
+      "replace spaces/hyphens with underscores",
+      "compare snake_case and compact forms"
+    ],
+    "safety": [
+      "Resolve aliases only within a model already selected or strongly supported by relationship context.",
+      "Do not treat shared aliases such as id, name, stock, total, mode, created, or updated as globally unique.",
+      "Foreign-key aliases identify a relationship reference, not permission to attach a record without validating the referenced parent.",
+      "Do not infer an aggregation or split operation from aliases."
+    ],
+    "excluded_models": [
+      {
+        "model": "AdminUser",
+        "reason": "User-related model; excluded under the requested user-model exclusion."
+      },
+      {
+        "model": "Users",
+        "reason": "Model name contains 'Users'; excluded under the requested rule."
+      }
+    ]
+  },
+  "models": {
+    "Inventory": {
+      "table": "inventory",
+      "relationships": {
+        "catalog_rel": {
+          "target": "Catalog",
+          "cardinality": "one-to-many",
+          "foreign_key_on_child": "Catalog.i_id"
+        },
+        "admin_users": {
+          "target": "AdminUser",
+          "cardinality": "many-to-one",
+          "foreign_key": "Inventory.user_id",
+          "excluded_target": true
+        }
+      },
+      "columns": {
+        "id": {
+          "type": "GUID",
+          "role": "primary_key",
+          "aliases": [
+            "inventory_id",
+            "inventory_uuid",
+            "inventory_guid",
+            "record_id",
+            "item_record_id"
+          ]
+        },
+        "category": {
+          "type": "String(50)",
+          "role": "classification",
+          "aliases": [
+            "inventory_category",
+            "stock_category",
+            "product_category",
+            "item_category",
+            "category_name",
+            "department",
+            "stock_type"
+          ]
+        },
+        "stock": {
+          "type": "Integer",
+          "role": "inventory_quantity",
+          "aliases": [
+            "warehouse_stock",
+            "warehouseStock",
+            "warehouse_quantity",
+            "warehouseQuantity",
+            "inventory_stock",
+            "inventory_quantity",
+            "on_hand_inventory",
+            "warehouse_units",
+            "stored_quantity",
+            "bulk_stock"
+          ]
+        },
+        "total": {
+          "type": "Float",
+          "role": "inventory_value_or_total",
+          "aliases": [
+            "inventory_total",
+            "stock_total",
+            "total_value",
+            "inventory_value",
+            "total_amount",
+            "aggregate_total"
+          ],
+          "ambiguity_note": "The model only declares a Float named total; its business meaning is not explicit. Do not assume monetary value without domain confirmation."
+        },
+        "mode": {
+          "type": "String(30)",
+          "role": "payment_or_operation_mode",
+          "aliases": [
+            "payment_mode",
+            "transaction_mode",
+            "payment_method",
+            "settlement_method",
+            "operation_mode"
+          ]
+        },
+        "user_id": {
+          "type": "GUID",
+          "role": "foreign_key_to_admin_user",
+          "aliases": [
+            "admin_id",
+            "admin_user_id",
+            "owner_id",
+            "account_owner_id",
+            "created_by_id"
+          ]
+        },
+        "flag": {
+          "type": "String(30)",
+          "role": "asset_classification",
+          "aliases": [
+            "asset_flag",
+            "asset_status",
+            "asset_type",
+            "inventory_flag",
+            "stock_classification",
+            "is_asset",
+            "asset_category"
+          ]
+        },
+        "created": {
+          "type": "DateTime",
+          "role": "creation_timestamp",
+          "aliases": [
+            "created_at",
+            "creation_date",
+            "date_created",
+            "inserted_at",
+            "record_created_at"
+          ]
+        },
+        "updated": {
+          "type": "DateTime",
+          "role": "update_timestamp",
+          "aliases": [
+            "updated_at",
+            "modified_at",
+            "last_modified",
+            "date_updated",
+            "last_updated_at"
+          ]
+        }
+      }
+    },
+    "Catalog": {
+      "table": "catalog",
+      "relationships": {
+        "inventory": {
+          "target": "Inventory",
+          "cardinality": "many-to-one",
+          "foreign_key": "Catalog.i_id"
+        },
+        "sales_rel": {
+          "target": "Sales",
+          "cardinality": "one-to-many",
+          "foreign_key_on_child": "Sales.p_id"
+        },
+        "creditors_rel": {
+          "target": "Creditors",
+          "cardinality": "one-to-many",
+          "foreign_key_on_child": "Creditors.p_id"
+        }
+      },
+      "columns": {
+        "id": {
+          "type": "GUID",
+          "role": "primary_key",
+          "aliases": [
+            "catalog_id",
+            "catalog_uuid",
+            "catalog_guid",
+            "product_id",
+            "product_uuid",
+            "item_id",
+            "sku_record_id"
+          ]
+        },
+        "brand": {
+          "type": "String",
+          "role": "product_brand_or_name",
+          "aliases": [
+            "product_brand",
+            "brand_name",
+            "manufacturer",
+            "maker",
+            "product_name",
+            "item_name",
+            "label",
+            "trade_name"
+          ],
+          "ambiguity_note": "The source model calls this column brand. Product-name aliases are plausible import synonyms but should be checked against actual data."
+        },
+        "stock": {
+          "type": "Integer",
+          "role": "catalog_or_shelf_quantity",
+          "aliases": [
+            "shelf_stock",
+            "shelfStock",
+            "shelf_quantity",
+            "shelfQuantity",
+            "catalog_stock",
+            "product_stock",
+            "retail_stock",
+            "display_stock",
+            "shop_floor_stock",
+            "available_product_units",
+            "selling_stock"
+          ]
+        },
+        "min_stock": {
+          "type": "Integer",
+          "role": "minimum_stock_threshold",
+          "aliases": [
+            "minimum_stock",
+            "minimumStock",
+            "minStock",
+            "reorder_level",
+            "reorder_point",
+            "low_stock_threshold",
+            "minimum_quantity",
+            "stock_alert_level",
+            "safety_stock_level"
+          ]
+        },
+        "sku": {
+          "type": "String(50)",
+          "role": "stock_keeping_identifier",
+          "aliases": [
+            "stock_keeping_unit",
+            "stockkeepingunit",
+            "product_sku",
+            "item_sku",
+            "product_code",
+            "item_code",
+            "catalog_code",
+            "internal_product_code"
+          ]
+        },
+        "barcode": {
+          "type": "Integer",
+          "role": "barcode_identifier",
+          "aliases": [
+            "bar_code",
+            "barCode",
+            "barcode_number",
+            "ean",
+            "upc",
+            "gtin",
+            "product_barcode",
+            "item_barcode"
+          ],
+          "ambiguity_note": "The declared SQL type is Integer; some external barcodes contain leading zeroes or non-numeric characters. Preserve the source representation and validate before conversion."
+        },
+        "price": {
+          "type": "Float",
+          "role": "unit_price",
+          "aliases": [
+            "unit_price",
+            "selling_price",
+            "retail_price",
+            "product_price",
+            "item_price",
+            "sale_price",
+            "price_per_unit",
+            "rate"
+          ]
+        },
+        "i_id": {
+          "type": "GUID",
+          "role": "foreign_key_to_inventory",
+          "aliases": [
+            "inventory_id",
+            "inventoryId",
+            "parent_inventory_id",
+            "parent_id",
+            "stock_record_id",
+            "inventory_ref",
+            "inventory_reference"
+          ]
+        },
+        "created": {
+          "type": "DateTime",
+          "role": "creation_timestamp",
+          "aliases": [
+            "created_at",
+            "creation_date",
+            "date_created",
+            "inserted_at",
+            "record_created_at"
+          ]
+        },
+        "updated": {
+          "type": "DateTime",
+          "role": "update_timestamp",
+          "aliases": [
+            "updated_at",
+            "modified_at",
+            "last_modified",
+            "date_updated",
+            "last_updated_at"
+          ]
+        }
+      }
+    },
+    "Sales": {
+      "table": "sales",
+      "relationships": {
+        "catalog": {
+          "target": "Catalog",
+          "cardinality": "many-to-one",
+          "foreign_key": "Sales.p_id"
+        },
+        "credited_rel": {
+          "target": "Credited",
+          "cardinality": "one-to-many",
+          "foreign_key_on_child": "Credited.s_id"
+        }
+      },
+      "columns": {
+        "id": {
+          "type": "GUID",
+          "role": "primary_key",
+          "aliases": [
+            "sale_id",
+            "sales_id",
+            "sale_uuid",
+            "sales_uuid",
+            "transaction_id",
+            "receipt_id",
+            "sale_record_id"
+          ]
+        },
+        "p_id": {
+          "type": "GUID",
+          "role": "foreign_key_to_catalog",
+          "aliases": [
+            "product_id",
+            "catalog_id",
+            "item_id",
+            "catalog_item_id",
+            "sold_product_id",
+            "product_ref",
+            "product_reference"
+          ]
+        },
+        "quantity": {
+          "type": "Integer",
+          "role": "quantity_sold",
+          "aliases": [
+            "qty",
+            "qnty",
+            "units_sold",
+            "items_sold",
+            "sold_quantity",
+            "sale_quantity",
+            "number_sold",
+            "product_quantity",
+            "count_sold"
+          ]
+        },
+        "total": {
+          "type": "Float",
+          "role": "sale_total",
+          "aliases": [
+            "sale_total",
+            "total_amount",
+            "grand_total",
+            "transaction_total",
+            "receipt_total",
+            "line_total",
+            "amount_total"
+          ],
+          "ambiguity_note": "Confirm whether total represents a line total or whole receipt total before mapping."
+        },
+        "mode": {
+          "type": "String(30)",
+          "role": "payment_mode",
+          "aliases": [
+            "payment_mode",
+            "payment_method",
+            "transaction_mode",
+            "settlement_method",
+            "paid_by"
+          ]
+        },
+        "created": {
+          "type": "DateTime",
+          "role": "sale_timestamp",
+          "aliases": [
+            "created_at",
+            "sale_date",
+            "sold_at",
+            "transaction_date",
+            "date_sold",
+            "timestamp",
+            "purchased_at"
+          ]
+        },
+        "updated": {
+          "type": "DateTime",
+          "role": "update_timestamp",
+          "aliases": [
+            "updated_at",
+            "modified_at",
+            "last_modified",
+            "date_updated",
+            "last_updated_at"
+          ]
+        }
+      }
+    },
+    "Credited": {
+      "table": "credited",
+      "relationships": {
+        "sales": {
+          "target": "Sales",
+          "cardinality": "many-to-one",
+          "foreign_key": "Credited.s_id"
+        }
+      },
+      "columns": {
+        "id": {
+          "type": "GUID",
+          "role": "primary_key",
+          "aliases": [
+            "credited_id",
+            "credit_id",
+            "credited_record_id",
+            "credit_entry_id",
+            "debt_entry_id"
+          ]
+        },
+        "name": {
+          "type": "String(50)",
+          "role": "debtor_name",
+          "aliases": [
+            "customer_name",
+            "client_name",
+            "debtor_name",
+            "borrower_name",
+            "person_name",
+            "account_name",
+            "full_name"
+          ]
+        },
+        "phone": {
+          "type": "String(50)",
+          "role": "debtor_phone",
+          "aliases": [
+            "phone_number",
+            "telephone",
+            "mobile",
+            "mobile_number",
+            "contact_number",
+            "contact_phone",
+            "customer_phone",
+            "debtor_phone"
+          ]
+        },
+        "amount": {
+          "type": "Float",
+          "role": "credited_amount",
+          "aliases": [
+            "credit_amount",
+            "amount_credited",
+            "debt_amount",
+            "outstanding_amount",
+            "owed_amount",
+            "balance_due",
+            "amount_due",
+            "loan_amount"
+          ]
+        },
+        "s_id": {
+          "type": "GUID",
+          "role": "foreign_key_to_sales",
+          "aliases": [
+            "sale_id",
+            "sales_id",
+            "transaction_id",
+            "receipt_id",
+            "parent_sale_id",
+            "sales_reference"
+          ]
+        },
+        "created": {
+          "type": "DateTime",
+          "role": "creation_timestamp",
+          "aliases": [
+            "created_at",
+            "credit_date",
+            "date_credited",
+            "date_created",
+            "record_created_at"
+          ]
+        },
+        "updated": {
+          "type": "DateTime",
+          "role": "update_timestamp",
+          "aliases": [
+            "updated_at",
+            "modified_at",
+            "last_modified",
+            "date_updated",
+            "last_updated_at"
+          ]
+        }
+      }
+    },
+    "Creditors": {
+      "table": "creditors",
+      "relationships": {
+        "catalog": {
+          "target": "Catalog",
+          "cardinality": "many-to-one",
+          "foreign_key": "Creditors.p_id"
+        }
+      },
+      "columns": {
+        "id": {
+          "type": "GUID",
+          "role": "primary_key",
+          "aliases": [
+            "creditor_id",
+            "supplier_credit_id",
+            "payable_id",
+            "creditor_record_id",
+            "debt_record_id"
+          ]
+        },
+        "name": {
+          "type": "String(50)",
+          "role": "creditor_or_supplier_name",
+          "aliases": [
+            "creditor_name",
+            "supplier_name",
+            "vendor_name",
+            "payee_name",
+            "business_name",
+            "company_name",
+            "provider_name"
+          ]
+        },
+        "phone": {
+          "type": "String(50)",
+          "role": "creditor_phone",
+          "aliases": [
+            "phone_number",
+            "telephone",
+            "mobile",
+            "mobile_number",
+            "contact_number",
+            "contact_phone",
+            "supplier_phone",
+            "vendor_phone"
+          ]
+        },
+        "amount": {
+          "type": "Float",
+          "role": "payable_or_creditor_amount",
+          "aliases": [
+            "creditor_amount",
+            "payable_amount",
+            "amount_owed",
+            "outstanding_payable",
+            "supplier_balance",
+            "vendor_balance",
+            "debt_amount",
+            "balance_due"
+          ]
+        },
+        "p_id": {
+          "type": "GUID",
+          "role": "foreign_key_to_catalog",
+          "aliases": [
+            "product_id",
+            "catalog_id",
+            "item_id",
+            "catalog_item_id",
+            "product_ref",
+            "product_reference"
+          ]
+        },
+        "created": {
+          "type": "DateTime",
+          "role": "creation_timestamp",
+          "aliases": [
+            "created_at",
+            "date_created",
+            "record_created_at",
+            "credit_date",
+            "date_recorded"
+          ]
+        },
+        "updated": {
+          "type": "DateTime",
+          "role": "update_timestamp",
+          "aliases": [
+            "updated_at",
+            "modified_at",
+            "last_modified",
+            "date_updated",
+            "last_updated_at"
+          ]
+        }
+      }
+    },
+    "OperationExpenses": {
+      "table": "operation_expenses",
+      "relationships": {
+        "admin_users": {
+          "target": "AdminUser",
+          "cardinality": "many-to-one",
+          "foreign_key": "OperationExpenses.user_id",
+          "excluded_target": true
+        }
+      },
+      "columns": {
+        "id": {
+          "type": "GUID",
+          "role": "primary_key",
+          "aliases": [
+            "expense_id",
+            "operation_expense_id",
+            "expense_record_id",
+            "operational_expense_id"
+          ]
+        },
+        "expense": {
+          "type": "String(50)",
+          "role": "expense_category_or_title",
+          "aliases": [
+            "expense_name",
+            "expense_type",
+            "expense_category",
+            "cost_item",
+            "charge_name",
+            "operational_cost",
+            "cost_description"
+          ]
+        },
+        "reason": {
+          "type": "String(150)",
+          "role": "expense_reason",
+          "aliases": [
+            "description",
+            "expense_reason",
+            "purpose",
+            "details",
+            "justification",
+            "narration",
+            "memo",
+            "remarks",
+            "notes"
+          ]
+        },
+        "user_id": {
+          "type": "GUID",
+          "role": "foreign_key_to_admin_user",
+          "aliases": [
+            "admin_id",
+            "admin_user_id",
+            "owner_id",
+            "account_owner_id",
+            "record_owner_id",
+            "created_by_id"
+          ]
+        },
+        "created": {
+          "type": "DateTime",
+          "role": "creation_timestamp",
+          "aliases": [
+            "created_at",
+            "expense_date",
+            "date_created",
+            "incurred_at",
+            "recorded_at"
+          ]
+        },
+        "updated": {
+          "type": "DateTime",
+          "role": "update_timestamp",
+          "aliases": [
+            "updated_at",
+            "modified_at",
+            "last_modified",
+            "date_updated",
+            "last_updated_at"
+          ]
+        }
+      }
+    }
+  },
+  "cross_model_ambiguities": {
+    "stock": [
+      {
+        "model": "Inventory",
+        "column": "stock",
+        "meaning": "warehouse/inventory quantity"
+      },
+      {
+        "model": "Catalog",
+        "column": "stock",
+        "meaning": "catalog/product/shelf quantity"
+      }
+    ],
+    "total": [
+      {
+        "model": "Inventory",
+        "column": "total",
+        "meaning": "not explicit in model; verify"
+      },
+      {
+        "model": "Sales",
+        "column": "total",
+        "meaning": "sale or receipt total; verify granularity"
+      }
+    ],
+    "mode": [
+      {
+        "model": "Inventory",
+        "column": "mode",
+        "meaning": "not explicit; likely payment/operation mode"
+      },
+      {
+        "model": "Sales",
+        "column": "mode",
+        "meaning": "payment mode"
+      }
+    ],
+    "name": [
+      {
+        "model": "Credited",
+        "column": "name",
+        "meaning": "debtor/customer name"
+      },
+      {
+        "model": "Creditors",
+        "column": "name",
+        "meaning": "creditor/supplier name"
+      }
+    ],
+    "phone": [
+      {
+        "model": "Credited",
+        "column": "phone",
+        "meaning": "debtor/customer contact"
+      },
+      {
+        "model": "Creditors",
+        "column": "phone",
+        "meaning": "creditor/supplier contact"
+      }
+    ],
+    "amount": [
+      {
+        "model": "Credited",
+        "column": "amount",
+        "meaning": "amount owed/credited"
+      },
+      {
+        "model": "Creditors",
+        "column": "amount",
+        "meaning": "payable/creditor amount"
+      }
+    ],
+    "created_updated": "Timestamp aliases are shared across models and must be resolved using model context."
+  }
+}

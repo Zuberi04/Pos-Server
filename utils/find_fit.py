@@ -54,7 +54,6 @@ class FindFitToModel:
                                     edit = edit[:i] + m + edit[i:]
                 else:
                     edit = edit[: q.index(m)] + m + edit[q.index(m) :]
-        print(f"{edit} -> {q}")
         return self.re_arrange_edit([(a, b) for a, b in enumerate(q)], edit) == q
 
     @staticmethod
@@ -233,6 +232,36 @@ class FindFitToModel:
             else {"error": "not enough key-data to make any connection to model"}
         )
 
+    @staticmethod
+    def flag_matching(infer: dict):
+        from pathlib import Path
+        import pandas as pd
+
+        sch_path = Path(__file__).parent.parent.resolve() / "database"
+        if isinstance(sch_path, Path):
+            if sch_path.is_dir():
+                for p in sch_path.iterdir():
+                    if p.is_dir():
+                        for f in p.iterdir():
+                            if f.is_file() and f.name.endswith(".json"):
+                                schema = pd.read_json(f).to_dict()
+                                if schema:
+                                    for s in schema.keys():
+                                        if clean_str(s) in (
+                                            clean_str(infer["m"].__tablename__),
+                                            clean_str(infer["m"].__name__),
+                                        ):
+                                            for col in infer["k"]:
+                                                for c in col.copy().keys():
+                                                    if c in schema[s]:
+                                                        if (
+                                                            col[c]
+                                                            or clean_str(col[c])
+                                                            in schema[s][c]
+                                                        ):
+                                                            col["okay"] = True
+        return infer
+
     async def normalize_attr(self, infer: dict, record: dict, norm: dict = None):
         def norm_keys(keys: list):
             for k in keys:
@@ -250,12 +279,14 @@ class FindFitToModel:
         if "k" and "m" in infer and record:
             if len(infer["k"]) > 1:
                 infer["k"] = norm_keys(infer["k"])
+            infer = self.flag_matching(infer)
             for k in infer["k"]:
                 for x in k.keys():
-                    if not norm:
-                        norm = {x: record[k[x]]}
-                    elif not x in norm:
-                        norm[x] = record[k[x]]
+                    if k[x] in record:
+                        if not norm:
+                            norm = {x: record[k[x]]}
+                        elif not x in norm or "okay" in k and k["okay"]:
+                            norm[x] = record[k[x]]
             print(f"Norm with values: \n {norm}")
             return (infer, self.fill_missing_v(record, norm))
         return await self.find_similarity_in_columns(record)

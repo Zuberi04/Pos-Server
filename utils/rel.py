@@ -187,28 +187,32 @@ class FindUpdate:
 
     async def check_if_update(self, record: dict, model: Any, tn: str):
         exist = await read_stmt.check_if_update_or_new_entry(record, model)
+        print(f"Exist with values: {exist}")
+        from time import sleep
+
+        sleep(2)
         if exist:
             prev = await read_stmt.read_stmt_to_dict(exist)
             if self.check_inequality(prev, record):
                 inqs = await self.find_how_update_occurs_btw_prev_nxt(prev, record, tn)
                 if inqs:
                     if not isinstance(inqs, str):
-                        if "error" in inqs:
+                        if not isinstance(inqs, tuple):
                             return inqs
+                        inqs, record = inqs
                         for k in record.keys():
                             if k in inqs and not isinstance(record[k], str):
                                 record[k] = inqs[k] + str(record[k])
-                        print(f"Updating model: {tn} with values: \n {record}")
                     return (exist, record)
             return prev
         return None
 
     @staticmethod
     def compare_ts(r: dict, p_rec: dict):
-        def ts(sec: int = 5):
+        def ts(micro: int = 1000):
             from datetime import timedelta, datetime
 
-            return datetime.now() - timedelta(seconds=sec)
+            return datetime.now() - timedelta(microseconds=micro)
 
         if r:
             if r["updated"] and p_rec["updated"]:
@@ -237,32 +241,32 @@ class FindUpdate:
                     ):
                         return ("update", "child")
             return ("update", "parent")
-        return "replace"
+        return ("replace", "child", "parent")
 
     async def find_how_update_occurs_btw_prev_nxt(self, prev: dict, nxt: dict, tn: str):
         form = self.find_equality_of_keys(prev, nxt)
-        if not isinstance(form, str):
-            for m in self.models:
-                if m.__tablename__ != tn:
-                    rel = relshp.check_if_model_contains_relations(m)
-                    from utils.find_fit import find_fit_model
+        for m in self.models:
+            if m.__tablename__ != tn:
+                rel = relshp.check_if_model_contains_relations(m)
+                from utils.find_fit import find_fit_model
 
+                for f in form:
                     if (
-                        form[-1] != "child"
+                        f in ("child", "parent")
                         and rel[0] == tn
                         or rel[-1] in find_fit_model.collect_cols(m)
                     ):
-                        if rel[0] == tn:
-                            return await self.find_how_update_occurs_btw_rels(
-                                nxt,
-                                prev,
-                                form,
-                                tn,
-                                await read_stmt.read_stmt_to_dict(
-                                    await read_stmt.check_if_update_or_new_entry(nxt, m)
-                                ),
-                            )
-        return form
+                        inqs = await self.find_how_update_occurs_btw_rels(
+                            nxt,
+                            prev,
+                            form,
+                            tn,
+                            await read_stmt.read_stmt_to_dict(
+                                await read_stmt.check_if_update_or_new_entry(nxt, m)
+                            ),
+                        )
+                        if inqs:
+                            return inqs
 
     @staticmethod
     async def update_conflict_to_audit_logs(
@@ -270,6 +274,22 @@ class FindUpdate:
     ):
         await read_stmt.update_audits(tn, act, prev, extra)
         return {"error": f"{flag} confilct occurred btw updates!!"}
+
+    def check_if_miss(self, prev: dict, rec: dict, extra: dict, typ: str):
+        if typ == "child":
+            for e in extra.keys():
+                if isinstance(extra[e], (float, int)):
+                    if not e in prev and rec:
+                        rec[e] = extra[e]
+            f_keys = self.collect_foreign_keys()
+            if f_keys:
+                for k in f_keys.keys():
+                    if k in extra:
+                        if "inventory" in f_keys[k] and not prev["total"]:
+                            from utils.cog_pricing import est_price
+
+                            rec = est_price.calculate_cog_from_r_price(rec)
+        return rec
 
     async def find_how_update_occurs_btw_rels(
         self, record: dict, prev: dict, form: tuple, tn, extra: dict = None
@@ -284,6 +304,10 @@ class FindUpdate:
                             if not isinstance(l, str):
                                 x: Any = None
                                 if extra:
+                                    for f in form:
+                                        record = self.check_if_miss(
+                                            prev, record, extra, f
+                                        )
                                     for e in extra.keys():
                                         if (
                                             isinstance(extra[e], (float, int))
@@ -294,21 +318,27 @@ class FindUpdate:
                                             )
                                             if x:
                                                 if isinstance(x, str):
-                                                    return await self.update_conflict_to_audit_logs(
-                                                        record,
-                                                        prev,
-                                                        tn,
-                                                        extra,
-                                                        "rel-numeric",
-                                                    )
+                                                    if x != "replace":
+                                                        return await self.update_conflict_to_audit_logs(
+                                                            record,
+                                                            prev,
+                                                            tn,
+                                                            extra,
+                                                            "rel-numeric",
+                                                        )
+                                                    else:
+                                                        x = (x,)
                                 inqs[k] = self.compare_form_with_linear(
                                     l + x if x else l, form
                                 )
                             else:
-                                return await self.update_conflict_to_audit_logs(
-                                    record, prev, tn, extra, "numeric"
-                                )
-                return inqs if inqs else None
+                                if l != "replace":
+                                    return await self.update_conflict_to_audit_logs(
+                                        record, prev, tn, extra, "numeric"
+                                    )
+                                elif l in form:
+                                    return l
+                return (inqs, record) if inqs else None
             return await self.update_conflict_to_audit_logs(
                 record, prev, tn, extra, "date"
             )

@@ -82,14 +82,14 @@ class ReadStatements:
     @run_in_thread_pool
     async def write_items_to_db(self, model: Any, data: dict):
         mod = model()
-
+        print("Inserting data with values: \n\t", data)
         with create_db() as db:
             for col in mod.__table__.c:
                 if col.key in data and col.key != "id":
                     try:
                         if isinstance(data[col.key], col.type.python_type):
                             setattr(mod, col.key, data[col.key])
-                    except Exception:
+                    except NotImplementedError:
                         setattr(mod, col.key, data[col.key])
             db.add(mod)
             db.commit()
@@ -120,13 +120,14 @@ class ReadStatements:
 
     @run_in_thread_pool
     async def update_db_entries(self, stmt: Any, record: dict):
+        print(f"Updating model with record: \n\t{record}")
         with create_db() as db:
             model = db.merge(stmt)
             for col in model.__table__.c:
                 prev = getattr(model, col.key)
-                if col.key in record and col.key != "id":
+                if col.key != "id" and col.key in record and record[col.key]:
                     if not isinstance(prev, (float, int)):
-                        if record[col.key] and isinstance(record[col.key], type(prev)):
+                        if isinstance(record[col.key], type(prev)):
                             setattr(model, col.key, record[col.key])
                     else:
                         setattr(
@@ -138,10 +139,16 @@ class ReadStatements:
                                 else prev + int(float(record[col.key]))
                             ),
                         )
-                elif col.key.startswith("upd"):
-                    setattr(model, col.key, datetime.datetime.now())
                 else:
-                    setattr(model, col.key, prev)
+                    setattr(
+                        model,
+                        col.key,
+                        (
+                            prev
+                            if not col.key.startswith("upd")
+                            else datetime.datetime.now()
+                        ),
+                    )
             db.commit()
             db.refresh(model)
             return await self.update_audits(
@@ -169,22 +176,45 @@ class ReadStatements:
             data = [data] if not isinstance(data, list) else data
             for rec in data:
                 for k in nxt.keys():
-                    if (
-                        not k.startswith(self.ts_flags)
-                        and k.endswith("id")
-                        and k in rec
-                        and rec[k] == nxt[k]
-                    ):
-                        for x in rec.keys():
-                            if not x.startswith(self.ts_flags) and not x.endswith("id"):
-                                if (
-                                    isinstance(rec[x], str)
-                                    and x in nxt
-                                    and nxt[x] == rec[x]
+                    if k.endswith("_id"):
+                        if (
+                            k in rec
+                            and rec[k] == nxt[k]
+                            or k in find_fit_model.collect_cols(model)
+                        ):
+                            for x in rec.keys():
+                                if not x.startswith(self.ts_flags) and not x.endswith(
+                                    "id"
                                 ):
-                                    return await self.read_stmt(
-                                        model, rec["id"], flag="upd"
-                                    )
+                                    if x in nxt:
+                                        if isinstance(rec[x], str) and nxt[x] == rec[x]:
+                                            return await self.read_stmt(
+                                                model,
+                                                rec[
+                                                    (
+                                                        "id"
+                                                        if k in rec
+                                                        else "".join(
+                                                            [
+                                                                n
+                                                                for n in rec.keys()
+                                                                if n.endswith("_id")
+                                                            ]
+                                                        )
+                                                    )
+                                                ],
+                                                flag="upd",
+                                            )
+            from utils.rel import upd
+
+            if upd.return_keys(data[0].keys()) == upd.return_keys(
+                find_fit_model.collect_cols(model)
+            ):
+                for m in MODELS:
+                    if m != model:
+                        res = await self.read_stmt(m, data[0]["id"])
+                        if res:
+                            return await self.check_if_values_upd(res, nxt, model)
         return None
 
     @run_in_thread_pool
@@ -192,12 +222,18 @@ class ReadStatements:
         self, data: dict, model: Any, out: str = None, flag: bool = False
     ):
         for k in data.keys():
-            if k != out and flag or k.find("id") != -1 and isinstance(data[k], str):
-                upd = await self.check_if_values_upd(
-                    await self.read_stmt(model, data[k]), data, model
-                )
-                if upd:
-                    return upd
+            if k in find_fit_model.collect_cols(model):
+                if (
+                    k != out
+                    and isinstance(data[k], str)
+                    and flag
+                    or k.endswith("_id") != -1
+                ):
+                    upd = await self.check_if_values_upd(
+                        await self.read_stmt(model, data[k]), data, model
+                    )
+                    if upd:
+                        return upd
         return (
             await self.check_if_update_or_new_entry(data, model, out, True)
             if not flag
@@ -217,3 +253,4 @@ class ReadStatements:
 
 
 read_stmt = ReadStatements()
+from utils.find_fit import find_fit_model
