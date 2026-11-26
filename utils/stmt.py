@@ -4,7 +4,7 @@ from typing import Any
 from numpy import isin
 
 from database.config import create_db
-from utils.extras import run_in_thread_pool, MODELS, TS_FLAGS, clean_str
+from utils.extras import clean_data, run_in_thread_pool, MODELS, TS_FLAGS, clean_str
 
 
 class ReadStatements:
@@ -58,18 +58,20 @@ class ReadStatements:
     @run_in_thread_pool
     def read_stmt_to_dict(stmt: Any):
         if stmt:
-            from sqlalchemy import inspect
+            if not isinstance(stmt, dict):
+                from sqlalchemy import inspect
 
-            try:
-                return {
-                    c.key: getattr(stmt, c.key)
-                    for c in inspect(stmt, raiseerr=ValueError).mapper.column_attrs
-                }
-            except ValueError:
-                return {
-                    clean_str(col.key): getattr(stmt, col.key, None)
-                    for col in stmt.__table__.c
-                }
+                try:
+                    return {
+                        c.key: getattr(stmt, c.key)
+                        for c in inspect(stmt, raiseerr=ValueError).mapper.column_attrs
+                    }
+                except ValueError:
+                    return {
+                        clean_str(col.key): getattr(stmt, col.key, None)
+                        for col in stmt.__table__.c
+                    }
+            return stmt
         return None
 
     @staticmethod
@@ -171,7 +173,9 @@ class ReadStatements:
         return data
 
     @run_in_thread_pool
-    async def check_if_values_upd(self, data: list | dict, nxt: dict, model: Any):
+    async def check_if_values_upd(
+        self, data: list | dict, nxt: dict, model: Any, flag: str = None
+    ):
         if data:
             data = [data] if not isinstance(data, list) else data
             for rec in data:
@@ -187,25 +191,31 @@ class ReadStatements:
                                     "id"
                                 ):
                                     if x in nxt:
-                                        if isinstance(rec[x], str) and nxt[x] == rec[x]:
+                                        if isinstance(
+                                            rec[x], str
+                                        ) and find_fit_model.check_if_a_compares_b(
+                                            nxt[x], rec[x]
+                                        ):
+                                            if flag:
+                                                for y in rec.keys():
+                                                    if isinstance(rec[y], str):
+                                                        for z in nxt.copy().keys():
+                                                            if (
+                                                                isinstance(
+                                                                    nxt[z], type(rec[y])
+                                                                )
+                                                                and nxt[z] == rec[y]
+                                                            ):
+                                                                if not find_fit_model.check_if_a_compares_b(
+                                                                    z, y
+                                                                ):
+                                                                    del nxt[z]
                                             return await self.read_stmt(
                                                 model,
-                                                rec[
-                                                    (
-                                                        "id"
-                                                        if k in rec
-                                                        else "".join(
-                                                            [
-                                                                n
-                                                                for n in rec.keys()
-                                                                if n.endswith("_id")
-                                                            ]
-                                                        )
-                                                    )
-                                                ],
+                                                rec["id" if not flag else flag],
                                                 flag="upd",
                                             )
-            from utils.rel import upd
+            from utils.rel import upd, relshp
 
             if upd.return_keys(data[0].keys()) == upd.return_keys(
                 find_fit_model.collect_cols(model)
@@ -214,26 +224,28 @@ class ReadStatements:
                     if m != model:
                         res = await self.read_stmt(m, data[0]["id"])
                         if res:
-                            return await self.check_if_values_upd(res, nxt, model)
+                            return await self.check_if_values_upd(
+                                res,
+                                nxt,
+                                model,
+                                relshp.check_if_model_contains_relations(m)[1],
+                            )
         return None
 
     @run_in_thread_pool
     async def check_if_update_or_new_entry(
         self, data: dict, model: Any, out: str = None, flag: bool = False
     ):
+        data = clean_data(data)
         for k in data.keys():
             if k in find_fit_model.collect_cols(model):
-                if (
-                    k != out
-                    and isinstance(data[k], str)
-                    and flag
-                    or k.endswith("_id") != -1
-                ):
-                    upd = await self.check_if_values_upd(
-                        await self.read_stmt(model, data[k]), data, model
-                    )
-                    if upd:
-                        return upd
+                if k != out and isinstance(data[k], str):
+                    if flag or k.endswith("_id") != -1:
+                        upd = await self.check_if_values_upd(
+                            await self.read_stmt(model, data[k]), data, model
+                        )
+                        if upd:
+                            return upd
         return (
             await self.check_if_update_or_new_entry(data, model, out, True)
             if not flag

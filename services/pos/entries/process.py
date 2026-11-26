@@ -2,12 +2,12 @@ import pandas as pd
 import time
 from pathlib import Path
 
-from utils.extras import clean_str, MODELS
+from utils.extras import clean_data, clean_str, MODELS
 
 
 class ProcessFile:
     def __init__(self):
-        self.flags = {"move", "movement"}
+        self.flags = {"move", "movement", "movements"}
         self.models = MODELS
         self.check = {"type": {"in": "+", "out": "-"}}
         self.process_types = {
@@ -23,10 +23,14 @@ class ProcessFile:
                 ".csv",
                 ".txt",
                 ".tsv",
+            },
+            self.process_dbs: {
+                ".accdb",
+                ".odb",
+                ".mdb",
                 ".sql",
                 ".db",
             },
-            self.process_dbs: {".accdb", ".odb", ".mdb"},
             self.process_docx: {
                 ".docx",
                 ".odt",
@@ -127,67 +131,56 @@ class ProcessFile:
                     elif proc not in procs:
                         procs.append(proc)
                     t += 1
-                res.extend(await self.process_entries(procs, data["id"]))
+                res.extend(await self.process_entries(procs, data, flag=False))
                 c += 1
             if not res:
                 return await self.process_pdfs(data, "extract")
             return res
 
-    async def process_dbs(self, data: dict):
+    async def process_dbs(self, data: dict, procs: list = []):
         import pyodc
         from utils.stmt import read_stmt
 
         conn = pyodc.connect(
             r"DRIVER={MICROSOFT Access Driver (*.mdb, *.accdb)};" rf"BDQ={data['path']}"
         )
-        cursor = conn.cursor()
-        procs = []
-        for row in cursor.fetchall():
+        for row in conn.cursor().fetchall():
             procs.append(await read_stmt.read_stmt_to_dict(row))
-
-        return await self.process_entries(procs, data["id"])
+        return await self.process_entries(procs, data, flag=False)
 
     async def process_using_dfs(self, data: dict, item: str, df: pd.DataFrame = None):
         from io import BytesIO
 
         buffer = BytesIO(data["file"])
-
-        if item.endswith(("s", "x", "sb")):
-            try:
-                df = pd.read_excel(data["path"], engine="calamine", sheet_name=None)
-            except Exception:
+        if item.find(".") != -1:
+            if not item.endswith(("sx", "lx", "ds")):
+                if not item.endswith("json"):
+                    if not item.endswith(("csv", "txt", "tsv")):
+                        return {"error": "Type of file not able to process!!"}
+                    df = pd.read_csv(buffer)
+                else:
+                    df = pd.read_json(buffer)
+            else:
                 df = pd.read_excel(buffer, engine="calamine", sheet_name=None)
-
-        elif item.startswith(".js"):
-            try:
-                df = pd.read_json(data["path"], lines=False)
-            except Exception:
-                df = pd.read_json(buffer)
-        elif item.startswith((".d", ".sq")):
-            from database.config import engine
-
-            try:
-                df = pd.read_sql(data["path"], con=engine.connect())
-            except Exception:
-                df = pd.read_sql(buffer, con=engine.connect())
-        else:
-            try:
-                df = pd.read_csv(data["path"])
-            except Exception:
-                df = pd.read_csv(buffer)
-        if not len(df) or df is None:
-            raise ValueError("Failed to create df structure from passed file!!")
-        elif not isinstance(df, pd.DataFrame):
-            res = []
-            for k in df.keys():
-                data["name"] = k if isinstance(k, str) and k.isalpha() else data["name"]
-                res.extend(
-                    await self.process_entries(df[k].to_dict(orient="records"), data)
+            if not len(df) or df is None:
+                raise ValueError(
+                    "Failed to create df structure from passed file buffer!!"
                 )
-                time.sleep(60)
-            print(f"Len of res: {len(res)}")
-            return res
-        return await self.process_entries(df.to_dict(orient="records"), data)
+            elif not isinstance(df, pd.DataFrame):
+                res = []
+                for k in df.keys():
+                    data["name"] = k
+                    res.extend(
+                        await self.process_entries(
+                            df[k].to_dict(orient="records"), data, flag=False
+                        )
+                    )
+                print(f"Len of res: {len(res)}")
+                return res
+            return await self.process_entries(
+                df.to_dict(orient="records"), data, flag=False
+            )
+        return {"error": "Unsupported file type!!"}
 
     async def check_zipfile_for_pk(self, data: dict):
         from zipfile import is_zipfile, ZipFile
@@ -208,23 +201,32 @@ class ProcessFile:
         run(["rm", "-rf", f"{path}"])
         return res
 
-    async def process_entries(self, data: list, entry: dict, res: list = []):
+    async def process_entries(
+        self, data: list, entry: dict, res: list = None, flag: bool = False
+    ):
         from setup import update_reqs
 
-        entry["name"] = update_reqs.format_q(entry["name"])
+        entry["name"] = clean_str(update_reqs.format_q(entry["name"]))
+        for f in self.flags:
+            if f == entry["name"] or entry["name"].find(f) != -1:
+                print(f"Flag {f} found in {entry['name']}!!")
+                flag = True
+                break
         for rec in data:
             rec["user_id"] = entry["id"]
-            for f in self.flags:
-                if (
-                    clean_str(f) == clean_str(entry["name"])
-                    or clean_str(entry["name"]).find(clean_str(f)) != -1
-                ):
-                    moved = await self.check_how_mvment_occured(rec)
-                    if moved:
-                        rec = moved
-            res.append(
-                await self.process_record_find_entry(rec, clean_str(entry["name"]))
-            )
+            if flag:
+                moved = await self.check_how_stock_mvment_occured(rec)
+                if not moved:
+                    continue
+                rec = moved
+            if res:
+                res.append(
+                    await self.process_record_find_entry(rec, clean_str(entry["name"]))
+                )
+            else:
+                res = [
+                    await self.process_record_find_entry(rec, clean_str(entry["name"]))
+                ]
         print(f"Response with values: \n\t {res}")
         return res
 
@@ -268,34 +270,34 @@ class ProcessFile:
             )
         return result
 
-    async def check_how_mvment_occured(self, record: dict):
-        if record:
-            for r in record.keys():
-                if isinstance(record[r], str) and clean_str(r) in self.check:
-                    for m in self.models:
-                        from utils.stmt import read_stmt
+    async def check_how_stock_mvment_occured(self, record: dict):
+        record = clean_data(record)
+        for r in record.keys():
+            if isinstance(record[r], str) and r in self.check:
+                for m in self.models:
+                    from utils.stmt import read_stmt
 
-                        upd = await read_stmt.read_stmt_to_dict(
-                            await read_stmt.check_if_update_or_new_entry(
-                                record, m, "barcode"
-                            )
+                    upd = await read_stmt.read_stmt_to_dict(
+                        await read_stmt.check_if_update_or_new_entry(
+                            record, m, "barcode"
                         )
-                        if upd:
-                            for u in upd.keys():
-                                if isinstance(upd[u], int):
-                                    for v in record.keys():
-                                        if isinstance(record[v], type(upd[u])):
-                                            for w in self.check[r]:
-                                                if clean_str(record[r]) in w:
-                                                    upd[u] = int(
-                                                        upd[u]
-                                                        + float(
-                                                            w[record[r]]
-                                                            + str(record[v])
-                                                        )
+                    )
+                    if upd:
+                        for u in upd.keys():
+                            if isinstance(upd[u], int):
+                                for v in record.keys():
+                                    if isinstance(record[v], type(upd[u])):
+                                        for w in self.check[r].keys():
+                                            if w in clean_str(record[r]):
+                                                upd[u] = int(
+                                                    upd[u]
+                                                    + float(
+                                                        self.check[r][w]
+                                                        + str(record[v])
                                                     )
-                                                    return upd
-        return None
+                                                )
+                                                return upd
+        return print("Found not movement data!!")
 
 
 proc_file = ProcessFile()

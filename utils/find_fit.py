@@ -1,3 +1,4 @@
+from time import sleep
 from typing import Any
 
 from utils.extras import MODELS, clean_str, clean_data, TS_FLAGS
@@ -14,15 +15,20 @@ class FindFitToModel:
         from cmath import sqrt
 
         for c in s:
-            if c in self.l and self.l.index(c):
-                if s[s.index(c) - 1] in self.l and self.l.index(s[s.index(c) - 1]):
-                    if self.l.index(s[s.index(c) - 1]) != self.l.index(c):
-                        w += sqrt(
-                            -(idx**2)
-                            if self.l.index(s[s.index(c) - 1])
-                            > (idx := self.l.index(c))
-                            else idx**2 + self.l.index(s[s.index(c) - 1]) ** 2
-                        )
+            p = s[s.index(c) - 1]
+            if c != p:
+                if c in self.l:
+                    if p in self.l:
+                        if self.l.index(c):
+                            if self.l.index(p):
+                                if self.l.index(c) > self.l.index(p):
+                                    w += sqrt(
+                                        self.l.index(c) ** 2 + self.l.index(p) ** 2
+                                    )
+                                else:
+                                    w += sqrt(
+                                        -(self.l.index(p) ** 2) + self.l.index(c) ** 2
+                                    )
         return w
 
     def compare_meaning_a_to_b(self, a: str, b: str):
@@ -137,6 +143,31 @@ class FindFitToModel:
     async def find_similarity_in_columns(
         self, record: dict, excpt: tuple = None, flag: str = None, result: list = None
     ):
+        checked: list = []
+
+        def check_if_aliased(infer: dict, use: list = []):
+            def find_in_checked(keys: list):
+                for x in keys:
+                    for y in x.keys():
+                        if isinstance(x[y], str):
+                            for chk in checked:
+                                if infer["m"] in chk:
+                                    if y not in chk[infer["m"]]:
+                                        if x not in use:
+                                            use.append(x)
+                return use
+
+            for k in infer["k"]:
+                chck = {infer["m"]: set()}
+                if not checked or k in find_in_checked(infer["k"]):
+                    if "okay" in k and k["okay"]:
+                        infer["v"] += 1
+                        chck[infer["m"]].add(
+                            "".join([x for x in k.keys() if isinstance(k[x], str)])
+                        )
+                    checked.append(chck)
+            return infer
+
         for m in self.models:
             if not excpt or m not in excpt:
                 r = {"m": m, "k": [], "v": 0}
@@ -164,7 +195,9 @@ class FindFitToModel:
                                 if len(r["k"]) > len(x["k"]):
                                     r["v"] += x["v"]
                                 break
-                        result.append(r)
+                            else:
+                                x = check_if_aliased(self.flag_matching(x))
+                        result.append(check_if_aliased(self.flag_matching(r)))
                     else:
                         result = [r]
         print("First inferences from columns only: \n\t", result)
@@ -199,6 +232,9 @@ class FindFitToModel:
                     return True
             return False
 
+        def check_r_m(cols: list, keys: list):
+            return len(cols) * 0.4 < len(keys) < len(cols)
+
         for r in result:
             if not infer or r["m"] != infer["m"] and r["k"]:
                 if infer:
@@ -224,18 +260,26 @@ class FindFitToModel:
                             r["v"] -= r["v"] / len(r["k"])
                 if not infer or r["v"] > infer["v"]:
                     infer = r
+        if infer["m"].__tablename__ == "sales":
+            print("Infered with values: \n\t", infer)
+            sleep(10)
         print(f"Infered: \n\t {infer} \n\t From inferences: \n\t {result}")
-        return (
-            await self.normalize_attr(infer, record)
-            if infer["v"] > len(infer["k"])
-            or len(infer["k"]) >= len(self.collect_cols(infer["m"])) * 0.5
-            else {"error": "not enough key-data to make any connection to model"}
-        )
+        if infer["v"] >= len(infer["k"]) * 0.7 or check_r_m(
+            self.collect_cols(infer["m"]), infer["k"]
+        ):
+            return await self.normalize_attr(infer, record)
+        else:
+            print("[FAILED INFER]: \n\t", infer)
+            sleep(10)
+            return {"error": "not enough key-data to make any connection to model"}
 
     @staticmethod
     def flag_matching(infer: dict):
         from pathlib import Path
         import pandas as pd
+
+        def clean_m_names(m: Any):
+            return (clean_str(m.__name__), clean_str(m.__tablename__))
 
         sch_path = Path(__file__).parent.parent.resolve() / "database"
         if isinstance(sch_path, Path):
@@ -247,19 +291,28 @@ class FindFitToModel:
                                 schema = pd.read_json(f).to_dict()
                                 if schema:
                                     for s in schema.keys():
-                                        if clean_str(s) in (
-                                            clean_str(infer["m"].__tablename__),
-                                            clean_str(infer["m"].__name__),
-                                        ):
+                                        if clean_str(s) in clean_m_names(infer["m"]):
                                             for col in infer["k"]:
                                                 for c in col.copy().keys():
                                                     if c in schema[s]:
                                                         if (
-                                                            col[c]
-                                                            or clean_str(col[c])
-                                                            in schema[s][c]
-                                                        ):
-                                                            col["okay"] = True
+                                                            clean_str(col[c])
+                                                            in [
+                                                                clean_str(x)
+                                                                for x in schema[s][c]
+                                                            ]
+                                                        ) and not "okay" in col:
+                                                            for cl in infer["k"]:
+                                                                if cl != col:
+                                                                    if (
+                                                                        c in cl
+                                                                        and not "okay"
+                                                                        in cl
+                                                                    ):
+                                                                        col["okay"] = (
+                                                                            True
+                                                                        )
+                                                                        break
         return infer
 
     async def normalize_attr(self, infer: dict, record: dict, norm: dict = None):
@@ -267,19 +320,23 @@ class FindFitToModel:
             for k in keys:
                 n = keys[keys.index(k) + 1 if keys.index(k) < len(keys) - 1 else 0]
                 for x in k.keys():
-                    if x in n:
-                        if x != clean_str(n[x]):
-                            if x == clean_str(k[x]):
-                                keys.remove(n)
-                        else:
-                            keys.remove(k)
-            print(f"Keys returned with values: \n\t {keys}")
+                    if isinstance(k[x], str):
+                        if x in n and isinstance(n[x], str):
+                            if x != clean_str(n[x]):
+                                if x != clean_str(k[x]):
+                                    if "okay" in k:
+                                        keys.remove(n)
+                                    elif "okay" in n:
+                                        keys.remove(k)
+                                else:
+                                    keys.remove(n)
+                            else:
+                                keys.remove(k)
             return keys
 
         if "k" and "m" in infer and record:
             if len(infer["k"]) > 1:
                 infer["k"] = norm_keys(infer["k"])
-            infer = self.flag_matching(infer)
             for k in infer["k"]:
                 for x in k.keys():
                     if k[x] in record:
@@ -324,9 +381,11 @@ class FindFitToModel:
                                             infer["k"].append({col.key: x[y]})
                     else:
                         for e in exist.keys():
-                            if e != clean_str(exist[e]) and r_mod["k"].index(
-                                x
-                            ) == infer["k"].index(exist):
+                            if (
+                                isinstance(exist[e], str)
+                                and e != clean_str(exist[e])
+                                and r_mod["k"].index(x) == infer["k"].index(exist)
+                            ):
                                 infer["k"].append({col.key: x[y]})
         return (infer, record)
 

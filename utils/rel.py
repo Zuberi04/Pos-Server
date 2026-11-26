@@ -160,6 +160,7 @@ class FindRelationBtwData:
 
 
 relshp = FindRelationBtwData()
+import time
 
 
 class FindUpdate:
@@ -188,9 +189,8 @@ class FindUpdate:
     async def check_if_update(self, record: dict, model: Any, tn: str):
         exist = await read_stmt.check_if_update_or_new_entry(record, model)
         print(f"Exist with values: {exist}")
-        from time import sleep
-
-        sleep(2)
+        if tn == "sales":
+            time.sleep(5)
         if exist:
             prev = await read_stmt.read_stmt_to_dict(exist)
             if self.check_inequality(prev, record):
@@ -279,9 +279,10 @@ class FindUpdate:
         if typ == "child":
             for e in extra.keys():
                 if isinstance(extra[e], (float, int)):
-                    if not e in prev and rec:
-                        rec[e] = extra[e]
-            f_keys = self.collect_foreign_keys()
+                    if not e in prev:
+                        if not e in rec:
+                            rec[e] = extra[e]
+            f_keys = self.collect_foreign_keys({})
             if f_keys:
                 for k in f_keys.keys():
                     if k in extra:
@@ -289,6 +290,7 @@ class FindUpdate:
                             from utils.cog_pricing import est_price
 
                             rec = est_price.calculate_cog_from_r_price(rec)
+        print(f"Missing data found and added with values: \n\t{rec}")
         return rec
 
     async def find_how_update_occurs_btw_rels(
